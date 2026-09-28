@@ -11,6 +11,14 @@ globalThis.fetch = (input, init) =>
     init,
   );
 
+// jsdom has no ResizeObserver, which recharts' ResponsiveContainer needs. Charts have no size
+// in jsdom, so tests assert on the accessible table that accompanies each chart.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
   cleanup();

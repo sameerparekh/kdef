@@ -30,9 +30,12 @@ npm run db:up                      # postgres on localhost:55432
 cp .env.example .env
 npm run dev -w server              # API on :8080
 npm run dev -w web                 # SPA on :5173, proxies /api
+VITE_MOCK_API=true npm run dev -w web  # SPA on :5173 against in-memory MSW mocks, no server needed
 npm test                           # server feature tests (real Postgres) + web tests
 npm run lint && npm run typecheck && npm run format:check
 ```
+
+Mock mode (`VITE_MOCK_API=true`) is an explicit opt-in: it is never enabled automatically, and the nav shows a "Mock API" badge while it is on. The handlers in `web/src/mocks/mockApi.ts` are also what the web tests run against (MSW in Vitest).
 
 Check that Docker responds before running docker commands in an agent session. `docker info` should answer within about 2s; if Docker Desktop is wedged, docker commands hang instead of failing.
 
