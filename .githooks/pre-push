@@ -4,4 +4,7 @@ set -euo pipefail
 npm run --silent typecheck
 npm run --silent lint
 .github/scripts/check-todos.sh
-git fetch -q origin main 2>/dev/null && .github/scripts/check-migrations.sh origin/main
+# Skip only when origin/main does not exist yet (the very first push of the repo).
+if git fetch -q origin main 2>/dev/null; then
+  .github/scripts/check-migrations.sh origin/main
+fi
