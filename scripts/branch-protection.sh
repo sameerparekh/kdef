@@ -4,7 +4,7 @@
 set -euo pipefail
 REPO="${1:-sameerparekh/kdef}"
 
-gh api -X PUT "repos/${REPO}/branches/main/protection" --input - <<'JSON'
+gh api -X PUT "repos/${REPO}/branches/main/protection" --input - >/dev/null <<'JSON'
 {
   "required_status_checks": { "strict": true, "contexts": ["CI"] },
   "enforce_admins": false,
