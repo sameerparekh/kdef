@@ -76,15 +76,19 @@ describe('angledProbability', () => {
     for (let i = 1; i < p.length; i++) expect(p[i]).toBeGreaterThanOrEqual(p[i - 1]);
     expect(p[0]).toBe(ANGLED_MIN);
     expect(p[2]).toBeGreaterThan(p[1]);
-    const acc = (26 + ALPHA) / (30 + ALPHA + BETA);
+    const acc = (26 + BETA) / (30 + ALPHA + BETA);
     expect(p[2]).toBeCloseTo(
       Math.min(ANGLED_MAX, Math.max(ANGLED_MIN, acc - ANGLED_MASTERY_OFFSET)),
       10,
     );
   });
 
-  it('caps at ANGLED_MAX', () => {
-    expect(angledProbability(many(30, rec('fear', 'frontal', true)), 'fear')).toBe(ANGLED_MAX);
+  it('never exceeds ANGLED_MAX (a perfect window gives smoothed accuracy minus the offset)', () => {
+    const W = EMOTION_HISTORY_WINDOW;
+    const p = angledProbability(many(W, rec('fear', 'frontal', true)), 'fear');
+    const accuracy = (W + BETA) / (W + ALPHA + BETA);
+    expect(p).toBeCloseTo(Math.min(ANGLED_MAX, accuracy - ANGLED_MASTERY_OFFSET), 10);
+    expect(p).toBeLessThanOrEqual(ANGLED_MAX);
   });
 
   it('ignores other emotions', () => {
@@ -135,18 +139,31 @@ describe('simulated players', () => {
   interface Img extends Candidate {
     emotion: Emotion;
   }
-  const pool: Img[] = [];
-  let n = 0;
-  for (const emotion of EMOTIONS)
-    for (let subjectKey = 1; subjectKey <= 5; subjectKey++)
-      for (const angle of ['frontal', 'half_left', 'half_right'] as const)
-        pool.push({ id: `img-${n++}`, emotion, angle, subjectKey, timesSeen: 0 });
+  function buildPool(subjects: number): Img[] {
+    const out: Img[] = [];
+    for (const emotion of EMOTIONS)
+      for (let subjectKey = 1; subjectKey <= subjects; subjectKey++)
+        for (const angle of ['frontal', 'half_left', 'half_right'] as const)
+          out.push({
+            id: `${emotion}-${subjectKey}-${angle}`,
+            emotion,
+            angle,
+            subjectKey,
+            timesSeen: 0,
+          });
+    return out;
+  }
+  const smallPool = buildPool(5);
+  // Big enough that the last-50 exclusion never empties the frontal tier.
+  const bigPool = buildPool(20);
 
   function simulate(opts: {
+    pool?: Img[];
     steps: number;
     seed: number;
     isCorrect: (img: Img) => boolean;
   }): Img[] {
+    const pool = opts.pool ?? smallPool;
     const rng = seededRng(opts.seed);
     const seen = new Map<string, number>();
     const shown: Img[] = []; // newest first
@@ -186,7 +203,7 @@ describe('simulated players', () => {
   });
 
   it('does not show an always-missed photo more often than an always-solved one (within its emotion)', () => {
-    const target = pool.find(
+    const target = smallPool.find(
       (p) => p.emotion === 'sad' && p.subjectKey === 2 && p.angle === 'frontal',
     )!;
     const targetShareOfSad = (missTarget: boolean) => {
@@ -207,7 +224,7 @@ describe('simulated players', () => {
 
   it('shows more angled photos to a player who masters frontal ones', () => {
     const angledShare = (isCorrect: (i: Img) => boolean) => {
-      const tail = simulate({ steps: 3000, seed: 3, isCorrect }).slice(0, 1500);
+      const tail = simulate({ pool: bigPool, steps: 3000, seed: 3, isCorrect }).slice(0, 1500);
       return tail.filter((s) => isAngled(s.angle)).length / tail.length;
     };
     const novice = angledShare((i) => i.angle !== 'frontal' || i.subjectKey % 2 === 0);

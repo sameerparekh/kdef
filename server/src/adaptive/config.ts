@@ -13,9 +13,9 @@ export const EMOTION_HISTORY_WINDOW = 30;
 export const EMOTION_WEIGHT_FLOOR = 0.05;
 
 /**
- * Beta prior pseudo-counts for smoothing rates. ALPHA counts as a prior "miss" (or "hit" when
- * smoothing accuracy) and BETA as the opposite, so with Beta(1, 1) an emotion or tier with no
- * data has a rate of 0.5 rather than a noisy 0 or 1.
+ * Beta prior pseudo-counts for smoothing rates: ALPHA is a prior count of misses and BETA of
+ * hits. Error rate = (misses + ALPHA) / (n + ALPHA + BETA); accuracy = (hits + BETA) / (n + ALPHA + BETA).
+ * With Beta(1, 1) an emotion or tier with no data has a rate of 0.5 rather than a noisy 0 or 1.
  */
 export const ALPHA = 1;
 export const BETA = 1;
