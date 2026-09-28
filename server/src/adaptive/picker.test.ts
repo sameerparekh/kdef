@@ -118,6 +118,14 @@ describe('pickEmotionAndTier', () => {
     }
   });
 
+  it('only picks from the available emotions', () => {
+    const rng = seededRng(2);
+    const available = ['happy', 'sad'] as const;
+    const seen = new Set<Emotion>();
+    for (let i = 0; i < 500; i++) seen.add(pickEmotionAndTier([], rng, available).emotion);
+    expect([...seen].sort()).toEqual(['happy', 'sad']);
+  });
+
   it('draws angled photos with probability angledProbability', () => {
     const history = many(30, rec('fear', 'frontal', true));
     const p = angledProbability(history, 'fear');
