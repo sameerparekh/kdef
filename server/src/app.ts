@@ -7,6 +7,10 @@ import type { Db } from './db/connect.js';
 import { HttpError } from './errors.js';
 import type { Rng } from './rng.js';
 import { healthRoutes } from './routes/health.js';
+import { imageRoutes } from './routes/images.js';
+import { playerRoutes } from './routes/players.js';
+import { roundRoutes } from './routes/rounds.js';
+import { statsRoutes } from './routes/stats.js';
 
 /** Everything a route may depend on. Tests pass a TestClock and seededRng. */
 export interface AppDeps {
@@ -37,6 +41,10 @@ export async function buildApp(
   });
 
   healthRoutes(app, deps);
+  playerRoutes(app, deps);
+  roundRoutes(app, deps);
+  imageRoutes(app, deps);
+  statsRoutes(app, deps);
 
   if (opts.spa?.enabled) {
     await app.register(fastifyStatic, { root: opts.spa.distDir, wildcard: false });

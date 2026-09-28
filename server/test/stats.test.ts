@@ -10,7 +10,7 @@ import {
 } from '../src/stats/config.js';
 
 const right = (a: Emotion) => a;
-const wrong = (a: Emotion): Emotion => EMOTIONS[(EMOTIONS.indexOf(a) + 1) % EMOTIONS.length];
+const wrong = (a: Emotion): Emotion => EMOTIONS[(EMOTIONS.indexOf(a) + 1) % EMOTIONS.length]!;
 
 describe('GET /api/players/:id/stats', () => {
   let ctx: TestContext;
@@ -78,8 +78,8 @@ describe('GET /api/players/:id/stats', () => {
     expect(s.recentRounds).toHaveLength(2);
     expect(s.recentRounds[0]).toMatchObject({ answered: 20, correct: 0 });
     expect(s.recentRounds[1]).toMatchObject({ answered: 20, correct: 20 });
-    expect(new Date(s.recentRounds[0].startedAt).getTime()).toBeGreaterThan(
-      new Date(s.recentRounds[1].startedAt).getTime(),
+    expect(new Date(s.recentRounds[0]!.startedAt).getTime()).toBeGreaterThan(
+      new Date(s.recentRounds[1]!.startedAt).getTime(),
     );
   });
 

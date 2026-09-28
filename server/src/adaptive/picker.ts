@@ -48,9 +48,12 @@ const smoothedAccuracy = (hits: number, n: number) => (hits + BETA) / (n + ALPHA
 const countCorrect = (records: readonly AnswerRecord[]) => records.filter((r) => r.correct).length;
 
 /** Sampling weight per emotion: floor + smoothed error rate over its recent answers. */
-export function emotionWeights(history: readonly AnswerRecord[]): Record<Emotion, number> {
+export function emotionWeights(
+  history: readonly AnswerRecord[],
+  available: readonly Emotion[] = EMOTIONS,
+): Record<Emotion, number> {
   const weights = {} as Record<Emotion, number>;
-  for (const emotion of EMOTIONS) {
+  for (const emotion of available) {
     const w = windowFor(history, emotion);
     weights[emotion] =
       EMOTION_WEIGHT_FLOOR + smoothedErrorRate(w.length - countCorrect(w), w.length);
@@ -74,16 +77,21 @@ export function angledProbability(history: readonly AnswerRecord[], emotion: Emo
   return Math.min(ANGLED_MAX, Math.max(ANGLED_MIN, plainAcc - ANGLED_MASTERY_OFFSET));
 }
 
-/** Step 1: choose the emotion (weighted by recent misses) and the angle tier. */
+/**
+ * Step 1: choose the emotion (weighted by recent misses) and the angle tier. `available`
+ * restricts the draw to emotions that have at least one image.
+ */
 export function pickEmotionAndTier(
   history: readonly AnswerRecord[],
   rng: Rng,
+  available: readonly Emotion[] = EMOTIONS,
 ): { emotion: Emotion; tier: Tier } {
-  const weights = emotionWeights(history);
-  const total = EMOTIONS.reduce((sum, e) => sum + weights[e], 0);
+  if (available.length === 0) throw new Error('pickEmotionAndTier: no emotions available');
+  const weights = emotionWeights(history, available);
+  const total = available.reduce((sum, e) => sum + weights[e], 0);
   let x = rng.next() * total;
-  let emotion: Emotion = EMOTIONS[EMOTIONS.length - 1];
-  for (const e of EMOTIONS) {
+  let emotion: Emotion = available[available.length - 1] ?? EMOTIONS[0];
+  for (const e of available) {
     x -= weights[e];
     if (x < 0) {
       emotion = e;
@@ -92,6 +100,11 @@ export function pickEmotionAndTier(
   }
   const tier: Tier = rng.next() < angledProbability(history, emotion) ? 'angled' : 'plain';
   return { emotion, tier };
+}
+
+/** A uniformly random item (undefined only for an empty list). */
+export function pickUniform<T>(items: readonly T[], rng: Rng): T | undefined {
+  return items[Math.min(items.length - 1, Math.floor(rng.next() * items.length))];
 }
 
 /** Metadata about one candidate image for the chosen emotion. */
@@ -140,5 +153,5 @@ export function pickImage<C extends Candidate>(input: PickImageInput<C>): C | nu
   const otherSubjects = pool.filter((c) => !recentSubjects.has(c.subjectKey));
   if (otherSubjects.length > 0) pool = otherSubjects;
 
-  return pool[Math.min(pool.length - 1, Math.floor(rng.next() * pool.length))];
+  return pickUniform(pool, rng) ?? null;
 }

@@ -12,7 +12,7 @@ import {
 } from './helpers/quiz.js';
 import { createTestApp, type TestContext } from './helpers/testApp.js';
 
-const otherThan = (e: Emotion): Emotion => EMOTIONS[(EMOTIONS.indexOf(e) + 1) % EMOTIONS.length];
+const otherThan = (e: Emotion): Emotion => EMOTIONS[(EMOTIONS.indexOf(e) + 1) % EMOTIONS.length]!;
 
 describe('rounds and questions', () => {
   let ctx: TestContext;
@@ -240,13 +240,15 @@ describe('contrast image choice', () => {
   });
   afterAll(async () => ctx.close());
 
+  let seededCount = 0;
+
   /** Insert a question for a photo directly, so the shown photo is known. */
   async function seedQuestion(imageId: string): Promise<string> {
     const db = ctx.testDb.db;
     const player = await db
       .insertInto('players')
       .values({
-        display_name: `p${imageId}`,
+        display_name: `seeded-${++seededCount}`,
         color: '#000000',
         created_at: ctx.clock.now(),
       })

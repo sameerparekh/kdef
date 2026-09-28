@@ -73,9 +73,9 @@ describe('angledProbability', () => {
 
   it('rises with frontal mastery and follows clamp(accuracy - offset, min, max)', () => {
     const p = [10, 20, 26, 30].map((right) => angledProbability(frontalHistory(right, 30), 'fear'));
-    for (let i = 1; i < p.length; i++) expect(p[i]).toBeGreaterThanOrEqual(p[i - 1]);
+    for (let i = 1; i < p.length; i++) expect(p[i]).toBeGreaterThanOrEqual(p[i - 1]!);
     expect(p[0]).toBe(ANGLED_MIN);
-    expect(p[2]).toBeGreaterThan(p[1]);
+    expect(p[2]).toBeGreaterThan(p[1]!);
     const acc = (26 + BETA) / (30 + ALPHA + BETA);
     expect(p[2]).toBeCloseTo(
       Math.min(ANGLED_MAX, Math.max(ANGLED_MIN, acc - ANGLED_MASTERY_OFFSET)),
