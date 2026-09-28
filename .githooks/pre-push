@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Pre-push (<30s): typecheck, lint, TODO and migration checks. Tests run in CI.
+set -euo pipefail
+npm run --silent typecheck
+npm run --silent lint
+.github/scripts/check-todos.sh
+git fetch -q origin main 2>/dev/null && .github/scripts/check-migrations.sh origin/main

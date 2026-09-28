@@ -1,0 +1,37 @@
+# Local stack: `docker compose up --build`, then open http://localhost:8080
+# KDEF_HOST_DIR defaults to /Volumes/brenn/KDEF; it is only read on first startup,
+# while the images table is empty. Docker Desktop must be allowed to share /Volumes.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kdef
+      POSTGRES_PASSWORD: kdef
+      POSTGRES_DB: kdef
+    ports:
+      - '55432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U kdef -d kdef']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://kdef:kdef@db:5432/kdef
+      KDEF_DIR: /data/kdef
+    ports:
+      - '8080:8080'
+    volumes:
+      - ${KDEF_HOST_DIR:-/Volumes/brenn/KDEF}:/data/kdef:ro
+
+volumes:
+  pgdata:

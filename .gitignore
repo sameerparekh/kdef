@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+.claude/worktrees/
+playwright-report/
+test-results/
+# KDEF images are research-licensed and must never be committed.
+*.jpg
+*.JPG
+!e2e/fixtures/**/*.jpg
+!server/test/fixtures/**/*.jpg

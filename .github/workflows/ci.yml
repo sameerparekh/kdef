@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: .github/scripts/check-todos.sh
+
+  server:
+    name: Server typecheck & tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: kdef, POSTGRES_PASSWORD: kdef, POSTGRES_DB: kdef }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kdef" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://kdef:kdef@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run build -w shared
+      - run: npm run typecheck -w server
+      - run: npm test -w server
+
+  web:
+    name: Web typecheck, tests & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run build -w shared
+      - run: npm test -w web
+      - run: npm run build -w web
+
+  migrations:
+    name: Migrations immutable
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: .github/scripts/check-migrations.sh "origin/${{ github.base_ref }}"
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Single required status check for branch protection (scripts/branch-protection.sh).
+  ci:
+    name: CI
+    if: always()
+    needs: [lint, server, web, migrations, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed or were skipped
+        run: |
+          results='${{ toJSON(needs.*.result) }}'
+          echo "$results"
+          if echo "$results" | grep -qE '"(failure|cancelled)"'; then exit 1; fi
