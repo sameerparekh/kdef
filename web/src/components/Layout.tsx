@@ -1,12 +1,12 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { getLastPlayerId } from '../lib/lastPlayer';
+import { useSyncExternalStore } from 'react';
+import { NavLink, Outlet } from 'react-router-dom';
+import { getLastPlayerId, subscribeLastPlayer } from '../lib/lastPlayer';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-lg px-4 py-2 text-lg font-medium ${isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'}`;
 
 export function Layout() {
-  useLocation(); // re-read the remembered player on every navigation
-  const lastPlayerId = getLastPlayerId();
+  const lastPlayerId = useSyncExternalStore(subscribeLastPlayer, getLastPlayerId);
   return (
     <div className="flex min-h-dvh flex-col">
       <nav aria-label="Main" className="flex items-center gap-2 border-b bg-white px-4 py-2">

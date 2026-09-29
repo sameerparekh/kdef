@@ -147,6 +147,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       if (!player) return error(404, 'not_found', 'No such player');
       const roundId = nextId();
       const questionIds: string[] = [];
+      // The mock fixes the whole round up front; the real server picks each question at /next.
       for (let i = 0; i < roundLength; i++) {
         const q: MockQuestion = {
           id: nextId(),
@@ -189,11 +190,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     }),
 
     http.post('/api/questions/:id/answer', async ({ params, request }) => {
+      // Like the server: validate the body (400) before looking up state (404, 409).
+      const parsed = AnswerRequest.safeParse(await request.json());
+      if (!parsed.success) return error(400, 'bad_request', 'Unknown emotion');
       const q = questions.get(String(params.id));
       if (!q) return error(404, 'not_found', 'No such question');
       if (q.chosen !== null) return error(409, 'already_answered', 'Question already answered');
-      const parsed = AnswerRequest.safeParse(await request.json());
-      if (!parsed.success) return error(400, 'bad_request', 'Unknown emotion');
       const round = rounds.get(q.roundId)!;
       q.chosen = parsed.data.emotion;
       const correct = q.chosen === q.emotion;
@@ -260,14 +262,14 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         return { player, window, correct, byAcc, total: all.length };
       });
       const ranked = scored
-        .filter((s) => s.total >= MOCK_MIN_ANSWERS)
+        .filter((s) => s.window.length >= MOCK_MIN_ANSWERS)
         .sort((a, b) => b.correct / b.window.length - a.correct / a.window.length);
       const entries: LeaderboardEntry[] = [
         ...ranked,
-        ...scored.filter((s) => s.total < MOCK_MIN_ANSWERS),
+        ...scored.filter((s) => s.window.length < MOCK_MIN_ANSWERS),
       ].map((s) => ({
         player: s.player,
-        rank: s.total >= MOCK_MIN_ANSWERS ? ranked.indexOf(s) + 1 : null,
+        rank: s.window.length >= MOCK_MIN_ANSWERS ? ranked.indexOf(s) + 1 : null,
         windowAnswered: s.window.length,
         windowCorrect: s.correct,
         accuracy: pct(s.correct, s.window.length),

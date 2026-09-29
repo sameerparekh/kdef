@@ -38,7 +38,7 @@ export function LeaderboardPage() {
               <th scope="col">Rank</th>
               <th scope="col">Player</th>
               <th scope="col">Accuracy</th>
-              <th scope="col">Answers</th>
+              <th scope="col">Answers in window</th>
               <th scope="col">Best</th>
               <th scope="col">Worst</th>
             </tr>
@@ -56,7 +56,7 @@ export function LeaderboardPage() {
                   {e.player.displayName}
                 </td>
                 <td className="tabular-nums">{formatAccuracy(e.accuracy)}</td>
-                <td className="tabular-nums">{e.totalAnswered}</td>
+                <td className="tabular-nums">{e.windowAnswered}</td>
                 <td>{e.bestEmotion ? emotionLabel(e.bestEmotion) : '—'}</td>
                 <td>{e.worstEmotion ? emotionLabel(e.worstEmotion) : '—'}</td>
               </tr>
@@ -65,19 +65,23 @@ export function LeaderboardPage() {
         </table>
       )}
 
-      <h2 className="mt-8 text-xl font-semibold">Not yet ranked</h2>
-      <ul aria-label="Not yet ranked" className="mt-2 divide-y">
-        {unranked.map((e) => (
-          <li key={e.player.id} className="flex items-center justify-between py-2">
-            <Link to={`/players/${e.player.id}/play`} className="font-medium">
-              {e.player.displayName}
-            </Link>
-            <span className="text-slate-600">
-              needs {Math.max(minAnswers - e.totalAnswered, 0)} more answers
-            </span>
-          </li>
-        ))}
-      </ul>
+      {unranked.length > 0 ? (
+        <>
+          <h2 className="mt-8 text-xl font-semibold">Not yet ranked</h2>
+          <ul aria-label="Not yet ranked" className="mt-2 divide-y">
+            {unranked.map((e) => (
+              <li key={e.player.id} className="flex items-center justify-between py-2">
+                <Link to={`/players/${e.player.id}/play`} className="font-medium">
+                  {e.player.displayName}
+                </Link>
+                <span className="text-slate-600">
+                  needs {Math.max(minAnswers - e.windowAnswered, 0)} more answers
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </main>
   );
 }

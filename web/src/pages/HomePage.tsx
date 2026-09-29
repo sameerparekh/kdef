@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useCreatePlayer, useDeletePlayer, usePlayers } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
-import { setLastPlayerId } from '../lib/lastPlayer';
+import { clearLastPlayerId, setLastPlayerId } from '../lib/lastPlayer';
 
 /** Offered swatches; leaving it unset lets the server choose. */
 const SWATCHES = ['#e11d48', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed'];
@@ -35,7 +35,9 @@ function PlayerTile({ player }: { player: Player }) {
               type="button"
               className="rounded bg-white px-3 py-2 font-semibold text-red-700"
               disabled={del.isPending}
-              onClick={() => del.mutate(player.id)}
+              onClick={() =>
+                del.mutate(player.id, { onSuccess: () => clearLastPlayerId(player.id) })
+              }
             >
               Yes, delete
             </button>

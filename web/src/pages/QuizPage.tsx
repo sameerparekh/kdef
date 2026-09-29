@@ -1,7 +1,8 @@
 import { EMOTIONS, type AnswerResponse, type Emotion, type Question } from '@kdef/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { ApiRequestError } from '../api/client';
 import { qk, useCurrentQuestion, useSubmitAnswer } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
 import { emotionLabel } from '../lib/format';
@@ -52,7 +53,7 @@ function FeedbackBanner({ result }: { result: AnswerResponse }) {
     </p>
   ) : (
     <p role="status" className="rounded-lg bg-red-100 px-4 py-2 text-xl font-bold text-red-800">
-      ✗ Not quite: it was {result.correctEmotion}
+      ✗ Not quite: it was {emotionLabel(result.correctEmotion)}
     </p>
   );
 }
@@ -67,12 +68,27 @@ function QuestionView({
   onComplete: () => void;
 }) {
   const submit = useSubmitAnswer();
+  const inFlight = useRef(false);
   const result = submit.data ?? null;
   const answering = submit.isPending;
 
   function answer(emotion: Emotion) {
-    if (result || answering) return;
-    submit.mutate({ questionId: question.questionId, emotion });
+    // A ref, not render state: a second key can arrive before React re-renders.
+    if (result || inFlight.current) return;
+    inFlight.current = true;
+    submit.mutate(
+      { questionId: question.questionId, emotion },
+      {
+        onError: (err) => {
+          if (err instanceof ApiRequestError && err.status === 409) {
+            // Already answered (another tab or a duplicate request): move on via /next.
+            onNext();
+          } else {
+            inFlight.current = false;
+          }
+        },
+      },
+    );
   }
 
   function advance() {
