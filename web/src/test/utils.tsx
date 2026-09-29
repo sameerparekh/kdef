@@ -3,6 +3,7 @@ import { EMOTIONS } from '@kdef/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
+import { StrictMode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from '../App';
 import { createMockApi, type MockOptions } from '../mocks/mockApi';
@@ -41,15 +42,16 @@ export function fail(path: string, message = 'Database is on fire') {
 }
 
 /** Renders the whole app (nav + routes) at a URL with a fresh query client. */
-export function renderRoute(url: string) {
+export function renderRoute(url: string, opts: { strict?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const tree = (
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[url]}>
         <App />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  return render(opts.strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
 
 /** A wrong answer for an emotion (any other emotion). */

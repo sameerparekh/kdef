@@ -1,5 +1,7 @@
 import type { Emotion } from '@kdef/shared';
 import { screen, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import { server } from '../test/server';
 import { describe, expect, it } from 'vitest';
 import { ALICE, BOB, fail, hang, renderRoute, installMockApi } from '../test/utils';
 
@@ -39,6 +41,7 @@ describe('LeaderboardPage', () => {
       .getAllByRole('cell')
       .map((c) => c.textContent);
     expect(cells).toEqual(['1', 'Alice', '75%', '60', 'Happy', 'Sad']);
+    expect(screen.getByRole('columnheader', { name: /answers in window/i })).toBeInTheDocument();
     expect(within(table).queryByText('Bob')).not.toBeInTheDocument();
 
     // minAnswers (50) comes from the server response: 50 - 2 answers.
@@ -55,5 +58,28 @@ describe('LeaderboardPage', () => {
     renderRoute('/leaderboard');
     expect(await screen.findByText(/nobody is ranked yet/i)).toBeInTheDocument();
     expect(screen.getByRole('list', { name: /not yet ranked/i })).toBeInTheDocument();
+  });
+
+  it('computes answers still needed from the window count the server ranks on', async () => {
+    const base = { player: BOB, rank: null, accuracy: 0.5, bestEmotion: null, worstEmotion: null };
+    server.use(
+      http.get('/api/leaderboard', () =>
+        HttpResponse.json({
+          windowSize: 100,
+          minAnswers: 50,
+          entries: [{ ...base, windowAnswered: 10, windowCorrect: 5, totalAnswered: 400 }],
+        }),
+      ),
+    );
+    renderRoute('/leaderboard');
+    expect(await screen.findByText(/needs 40 more answers/i)).toBeInTheDocument();
+  });
+
+  it('omits the not-yet-ranked section when everyone is ranked', async () => {
+    const api = installMockApi({ players: [ALICE] });
+    api.seedRound(ALICE.id, aliceAnswers());
+    renderRoute('/leaderboard');
+    await screen.findByRole('table', { name: /leaderboard/i });
+    expect(screen.queryByRole('heading', { name: /not yet ranked/i })).not.toBeInTheDocument();
   });
 });

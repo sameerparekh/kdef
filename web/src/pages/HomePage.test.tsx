@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { ALICE, BOB, fail, hang, renderRoute, installMockApi } from '../test/utils';
@@ -90,5 +90,20 @@ describe('HomePage (Who is playing?)', () => {
     await screen.findByRole('link', { name: /bob/i });
     expect(screen.queryByRole('link', { name: /alice/i })).not.toBeInTheDocument();
     expect(api.state.players.map((p) => p.displayName)).toEqual(['Bob']);
+  });
+
+  it('forgets the remembered player when that player is deleted', async () => {
+    installMockApi();
+    localStorage.setItem('kdef.lastPlayerId', ALICE.id);
+    const user = userEvent.setup();
+    renderRoute('/');
+    await screen.findByRole('link', { name: /my stats/i });
+    await screen.findByRole('link', { name: /alice/i });
+    await user.click(screen.getByRole('button', { name: /delete alice/i }));
+    const confirm = screen.getByRole('group', { name: /confirm delete alice/i });
+    await user.click(within(confirm).getByRole('button', { name: /yes, delete/i }));
+    await waitFor(() => expect(screen.queryByRole('link', { name: /alice/i })).toBeNull());
+    expect(screen.queryByRole('link', { name: /my stats/i })).not.toBeInTheDocument();
+    expect(localStorage.getItem('kdef.lastPlayerId')).toBeNull();
   });
 });

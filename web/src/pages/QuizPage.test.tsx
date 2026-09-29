@@ -1,5 +1,5 @@
 import { EMOTIONS } from '@kdef/shared';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -40,6 +40,20 @@ describe('QuizPage', () => {
     installMockApi();
     renderRoute('/rounds/00000000-0000-4000-8000-000000000999');
     expect(await screen.findByRole('alert')).toHaveTextContent(/no such round/i);
+  });
+
+  it('shows a loading state while a round is being started', () => {
+    installMockApi();
+    server.use(http.post('/api/players/:id/rounds', () => delay('infinite')));
+    renderRoute(`/players/${ALICE.id}/play`);
+    expect(screen.getByRole('status')).toHaveTextContent(/starting round/i);
+  });
+
+  it('creates exactly one round under StrictMode', async () => {
+    const api = installMockApi();
+    renderRoute(`/players/${ALICE.id}/play`, { strict: true });
+    await screen.findByText(/question 1 of/i);
+    expect(api.state.rounds.size).toBe(1);
   });
 
   it('shows an error when a round cannot be started', async () => {
@@ -87,7 +101,7 @@ describe('QuizPage', () => {
     const wrong = otherThan(q.emotion);
     const user = userEvent.setup();
     await user.click(button(wrong));
-    expect(await screen.findByText(new RegExp(`it was ${q.emotion}`, 'i'))).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(`it was ${label(q.emotion)}`))).toBeInTheDocument();
     expect(screen.getByText(`What ${label(wrong)} looks like on this person`)).toBeInTheDocument();
     expect(screen.getByAltText('Same person, for comparison')).toHaveAttribute(
       'src',
@@ -170,5 +184,39 @@ describe('QuizPage', () => {
     await user.click(button(q.emotion));
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not save');
     expect(button(q.emotion)).toBeEnabled();
+  });
+
+  it('sends one answer when two keys are pressed back to back', async () => {
+    const api = await startQuiz();
+    const q = currentQuestion(api);
+    const bodies: unknown[] = [];
+    server.events.on('request:start', async ({ request }) => {
+      if (request.url.includes('/answer')) bodies.push(await request.clone().json());
+    });
+    fireEvent.keyDown(window, { key: '1' });
+    fireEvent.keyDown(window, { key: '2' });
+    await screen.findByText(/correct|not quite/i);
+    server.events.removeAllListeners();
+    expect(bodies).toEqual([{ emotion: EMOTIONS[0] }]);
+    expect(api.state.questions.get(q.id)?.chosen).toBe(EMOTIONS[0]);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('recovers from a 409 (already answered elsewhere) by moving to the next question', async () => {
+    const api = await startQuiz();
+    const q = currentQuestion(api);
+    api.state.questions.get(q.id)!.chosen = q.emotion; // answered from another tab
+    const user = userEvent.setup();
+    await user.keyboard('1');
+    expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('capitalises the emotion in the miss banner', async () => {
+    const api = await startQuiz();
+    const q = currentQuestion(api);
+    const user = userEvent.setup();
+    await user.click(button(otherThan(q.emotion)));
+    expect(await screen.findByText(new RegExp(`it was ${label(q.emotion)}$`))).toBeInTheDocument();
   });
 });
