@@ -4,3 +4,4 @@ coverage
 package-lock.json
 seed/angles.csv
 *.md
+web/public/mockServiceWorker.js

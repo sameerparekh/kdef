@@ -2,7 +2,9 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // public/ holds only MSW's mockServiceWorker.js: ship it in dev, or in a build made for mock mode.
+  publicDir: command === 'serve' || process.env.VITE_MOCK_API === 'true' ? 'public' : false,
   plugins: [react()],
   server: {
     port: 5173,
@@ -14,4 +16,4 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
   },
-});
+}));
