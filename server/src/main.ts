@@ -4,6 +4,7 @@ import { ConfigError, loadConfig } from './config.js';
 import { connect } from './db/connect.js';
 import { migrate } from './db/migrate.js';
 import { liveRng } from './rng.js';
+import { DEFAULT_MANIFEST_PATH, ensureImagesSeeded } from './seed/index.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
@@ -18,6 +19,14 @@ async function main(): Promise<void> {
     { migrationsApplied: applied, serveSpa: config.spa.enabled },
     'startup: migrations done',
   );
+
+  await ensureImagesSeeded({
+    db,
+    clock: liveClock,
+    kdefDir: config.kdefDir,
+    manifestPath: DEFAULT_MANIFEST_PATH,
+    log: (line) => app.log.info(line),
+  });
 
   const shutdown = async () => {
     await app.close();

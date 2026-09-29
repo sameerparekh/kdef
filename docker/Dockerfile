@@ -24,6 +24,7 @@ COPY --from=build /app/shared/dist shared/dist
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
 COPY db db
+COPY seed seed
 ENV SERVE_SPA=true WEB_DIST_DIR=/app/web/dist PORT=8080
 EXPOSE 8080
 USER node
