@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../src/config.js';
+import { DEFAULT_MANIFEST_PATH } from '../src/seed/manifest.js';
 
 describe('loadConfig', () => {
   it('reports every problem at once', () => {
@@ -26,5 +27,15 @@ describe('loadConfig', () => {
     expect(c.port).toBe(8080);
     expect(c.spa).toEqual({ enabled: false });
     expect(c.kdefDir).toBeUndefined();
+  });
+
+  it('defaults the seed manifest to the committed one and lets SEED_MANIFEST override it', () => {
+    expect(loadConfig({ DATABASE_URL: 'postgres://u:p@h/db' }).seedManifestPath).toBe(
+      DEFAULT_MANIFEST_PATH,
+    );
+    expect(
+      loadConfig({ DATABASE_URL: 'postgres://u:p@h/db', SEED_MANIFEST: '/fixtures/angles.csv' })
+        .seedManifestPath,
+    ).toBe('/fixtures/angles.csv');
   });
 });

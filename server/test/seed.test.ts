@@ -94,20 +94,34 @@ describe('image seeding', () => {
     expect(logs.join('\n')).toMatch(/frontal: 14/);
   });
 
-  it('logs manifest entries that match no file, and does not count manifest unknowns as missing', async () => {
+  it('fails loud and inserts nothing when manifest entries match no file (incomplete listing)', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'kdef-manifest-test-'));
+    try {
+      const manifest = path.join(dir, 'angles.csv');
+      const base = await readFile(FIXTURE_MANIFEST, 'utf8');
+      await writeFile(manifest, `${base}angry,99_99.jpg,frontal\n`);
+      await expect(ensureImagesSeeded(deps({ manifestPath: manifest }))).rejects.toThrow(
+        /1 manifest entries have no file.*angry\/99_99\.jpg/s,
+      );
+      const n = await ctx.testDb.db
+        .selectFrom('images')
+        .select((eb) => eb.fn.countAll<string>().as('n'))
+        .executeTakeFirstOrThrow();
+      expect(Number(n.n)).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not count manifest entries labelled unknown as missing from the manifest', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'kdef-manifest-test-'));
     try {
       const manifest = path.join(dir, 'angles.csv');
       const base = await readFile(FIXTURE_MANIFEST, 'utf8');
       const kept = base.split('\n').filter((l) => l !== 'angry,0_3.jpg,half_left');
-      await writeFile(
-        manifest,
-        `${kept.join('\n')}angry,0_3.jpg,unknown\nangry,99_99.jpg,frontal\n`,
-      );
+      await writeFile(manifest, `${kept.join('\n')}angry,0_3.jpg,unknown\n`);
       await ensureImagesSeeded(deps({ manifestPath: manifest }));
-      const out = logs.join('\n');
-      expect(out).toMatch(/1 manifest entries matched no file/);
-      expect(out).toMatch(/1 missing from the manifest/);
+      expect(logs.join('\n')).toMatch(/1 missing from the manifest/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
