@@ -331,4 +331,63 @@ describe('QuizPage', () => {
     await user.click(button(otherThan(q.emotion)));
     expect(await screen.findByText(new RegExp(`it was ${label(q.emotion)}$`))).toBeInTheDocument();
   });
+  describe('screen reader announcement', () => {
+    /** The persistent aria-live region. Deliberately has no role, so it never joins role=status queries. */
+    const live = () => document.querySelector<HTMLElement>('[aria-live="polite"]');
+
+    it('has a polite live region that is empty until an answer is given', async () => {
+      await startQuiz();
+      expect(live()).not.toBeNull();
+      expect(live()).toHaveTextContent('');
+    });
+
+    it('announces a correct answer and keeps the region mounted, with its text, through the advance', async () => {
+      const user = useClock();
+      const api = await startQuiz();
+      const region = live();
+      // The next question never arrives, so the page sits in its loading state after the advance.
+      server.use(http.post('/api/rounds/:id/next', () => delay('infinite')));
+      await user.click(button(currentQuestion(api).emotion));
+      await waitFor(() => expect(live()).toHaveTextContent('Correct.'));
+      await pause();
+      expect(screen.queryByText('Question 1 of 3')).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(/loading question/i);
+      expect(live()).toBe(region);
+      expect(region).toBeConnected();
+      expect(region).toHaveTextContent('Correct.');
+    });
+
+    it('announces the right answer on a miss', async () => {
+      const api = await startQuiz();
+      const q = currentQuestion(api);
+      const user = userEvent.setup();
+      await user.click(button(otherThan(q.emotion)));
+      await waitFor(() =>
+        expect(live()).toHaveTextContent(`Incorrect. The answer was ${label(q.emotion)}.`),
+      );
+    });
+
+    it('clears the previous result on the next question and announces the next one afresh', async () => {
+      const api = await startQuiz();
+      const user = userEvent.setup();
+      await user.click(button(currentQuestion(api).emotion));
+      await waitFor(() => expect(live()).toHaveTextContent('Correct.'));
+      await screen.findByText('Question 2 of 3');
+      // Stale "Correct." must not sit over an unanswered question, and clearing it lets an
+      // identical result on this question count as a change the screen reader speaks.
+      expect(live()).toHaveTextContent('');
+      await user.click(button(currentQuestion(api).emotion));
+      await waitFor(() => expect(live()).toHaveTextContent('Correct.'));
+    });
+
+    it('clears a miss when the player moves on', async () => {
+      const api = await startQuiz();
+      const user = userEvent.setup();
+      await user.click(button(otherThan(currentQuestion(api).emotion)));
+      await waitFor(() => expect(live()).toHaveTextContent(/incorrect/i));
+      await user.click(await screen.findByRole('button', { name: /^next$/i }));
+      await screen.findByText('Question 2 of 3');
+      expect(live()).toHaveTextContent('');
+    });
+  });
 });
