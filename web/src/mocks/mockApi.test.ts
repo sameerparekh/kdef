@@ -16,7 +16,8 @@ async function call(method: string, path: string, body?: unknown) {
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: ApiError.parse(await res.json()) };
+  const json: unknown = await res.json();
+  return { status: res.status, body: res.ok ? null : ApiError.parse(json) };
 }
 
 describe('mock API errors match the server', () => {
@@ -73,12 +74,12 @@ describe('mock API errors match the server', () => {
     installMockApi();
     const name = await call('POST', '/api/players', { displayName: '   ' });
     expect(name.status).toBe(400);
-    expect(name.body.error).toBe('bad_request');
-    expect(name.body.message).toMatch(/^displayName: /);
+    expect(name.body?.error).toBe('bad_request');
+    expect(name.body?.message).toMatch(/^displayName: /);
     const answer = await call('POST', `/api/questions/${MISSING}/answer`, { emotion: 'nope' });
     expect(answer.status).toBe(400);
-    expect(answer.body.message).toMatch(/^emotion: /);
+    expect(answer.body?.message).toMatch(/^emotion: /);
     const notObject = await call('POST', '/api/players', 'not an object');
-    expect(notObject.body.message).toMatch(/^\(body\): /);
+    expect(notObject.body?.message).toMatch(/^\(body\): /);
   });
 });

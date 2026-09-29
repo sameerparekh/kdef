@@ -1,9 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { CreatePlayerRequest, type Player, type PlayerList } from '@kdef/shared';
+import { CreatePlayerRequest, PLAYER_COLORS, type Player, type PlayerList } from '@kdef/shared';
 import type { AppDeps } from '../app.js';
 import { pickUniform } from '../adaptive/picker.js';
 import { conflict, notFound, parseOr400 } from '../errors.js';
-import { PLAYER_COLORS } from '../players/palette.js';
 import { toPlayer } from '../stats/stats.js';
 import { IdParams } from './params.js';
 

@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApiError, Player, PlayerList } from '@kdef/shared';
-import { PLAYER_COLORS } from '../src/players/palette.js';
+import { ApiError, PLAYER_COLORS, Player, PlayerList } from '@kdef/shared';
 import { insertPool } from './helpers/images.js';
 import { createPlayer, nextQuestion, startRound } from './helpers/quiz.js';
 import { createTestApp, type TestContext } from './helpers/testApp.js';

@@ -63,7 +63,7 @@ describe('QuizPage', () => {
   it('shows an error when the round cannot be loaded', async () => {
     installMockApi();
     renderRoute('/rounds/00000000-0000-4000-8000-000000000999');
-    expect(await screen.findByRole('alert')).toHaveTextContent(/no such round/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/round not found/i);
   });
 
   it('shows a loading state while a round is being started', () => {
@@ -83,7 +83,7 @@ describe('QuizPage', () => {
   it('shows an error when a round cannot be started', async () => {
     installMockApi();
     renderRoute('/players/00000000-0000-4000-8000-000000000998/play');
-    expect(await screen.findByRole('alert')).toHaveTextContent(/no such player/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/player not found/i);
   });
 
   it('renders seven emotion buttons in EMOTIONS order with the digit 1-7 on each', async () => {
@@ -308,7 +308,6 @@ describe('QuizPage', () => {
     fireEvent.keyDown(window, { key: '1' });
     fireEvent.keyDown(window, { key: '2' });
     await waitFor(() => expect(api.state.questions.get(q.id)?.chosen).toBe(EMOTIONS[0]));
-    server.events.removeAllListeners();
     expect(bodies).toEqual([{ emotion: EMOTIONS[0] }]);
     expect(api.state.questions.get(q.id)?.chosen).toBe(EMOTIONS[0]);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
