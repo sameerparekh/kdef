@@ -15,6 +15,12 @@
 - Vitest + Testing Library + jsdom. Intercept HTTP at the network boundary with the shared MSW handlers (`web/src/mocks/`), the same ones behind `VITE_MOCK_API=true`; don't mock the query hooks or `fetch` call sites.
 - Every data view has tests for the loading, error and loaded states (see `loading-states.md`).
 
+## End-to-end
+
+- One Playwright smoke test (`e2e/smoke.spec.ts`, chromium only) runs against the real Docker image, not a dev server: create a player without a colour, play a 20-question round by keyboard, check the feedback and contrast image, the summary, the stats confusion grid and the leaderboard, reload mid-round, check that no image alt text names an emotion, and check that restarting the app container logs `seed: skipped`.
+- `npm run e2e` (`e2e/run.sh`) starts the stack as compose project `kdef-e2e` (`e2e/docker-compose.e2e.yml`, app on port 18080, no db port), runs Playwright, and always tears the stack down with `-v`. It can run beside a dev stack.
+- It is the only test that exercises the live RNG and the production wiring; keep it small. Behaviour with many cases belongs in the server feature tests.
+
 ## Fixture images
 
-Tests never read KDEF. Use the small synthetic JPEGs under `server/test/fixtures/` (and `e2e/fixtures/`), laid out like the real dataset: `<emotion>/<subject>_<n>.jpg`.
+Tests never read KDEF. Use the small synthetic JPEGs under `server/test/fixtures/` (and `e2e/fixtures/`, 3 subjects x 7 emotions x 3 photos with a matching `angles.csv`), laid out like the real dataset: `<emotion>/<subject>_<n>.jpg`.

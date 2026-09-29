@@ -1,0 +1,18 @@
+# Override for the e2e stack. Always used as:
+#   docker compose -p kdef-e2e -f docker-compose.yml -f e2e/docker-compose.e2e.yml ...
+# The separate project name keeps its containers, network and volumes apart from a dev stack that
+# may be running on 8080/55432.
+services:
+  db:
+    # No host port: only the app container talks to this database.
+    ports: !reset []
+  app:
+    ports: !override
+      - '18080:8080'
+    environment:
+      # One row per fixture file: the seeder must find every manifest entry on disk.
+      SEED_MANIFEST: /app/seed/angles.csv
+    volumes:
+      # Relative paths resolve against the first -f file (the repo root).
+      - ${KDEF_HOST_DIR:-./e2e/fixtures/kdef}:/data/kdef:ro
+      - ./e2e/fixtures/angles.csv:/app/seed/angles.csv:ro
