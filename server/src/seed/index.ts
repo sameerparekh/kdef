@@ -86,7 +86,7 @@ async function assertManifestSeeded(deps: SeedDeps): Promise<void> {
     throw new Error(
       `seed: ${missing.length} manifest images are missing from the images table ` +
         `(first: ${missing.slice(0, 5).join(', ')}). Run a reseed with KDEF_DIR set to add them ` +
-        '(`npm run reseed -w server`, or `docker compose exec app node server/dist/reseedCli.js`); ' +
+        '(`npm run reseed -w server`, or `docker compose run --rm app node server/dist/reseedCli.js`); ' +
         'it upserts and keeps existing ids.',
     );
   }
