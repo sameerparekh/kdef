@@ -8,7 +8,6 @@ export default defineConfig(({ command }) => ({
   plugins: [react()],
   server: {
     port: 5173,
-    // All interfaces, so the dev SPA can be opened from another device on the LAN.
     // All interfaces, for testing from phones/tablets on the LAN. On an untrusted network run
     // `npm run dev -w web -- --host 127.0.0.1`: this server and its /api proxy are otherwise exposed.
     host: true,
