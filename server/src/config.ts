@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_MANIFEST_PATH } from './seed/manifest.js';
 
 /**
  * Environment config, validated once at boot. Missing or invalid required keys crash
@@ -10,6 +11,8 @@ const EnvSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   /** Directory holding the KDEF emotion folders. Needed only while the images table is empty. */
   KDEF_DIR: z.string().min(1).optional(),
+  /** Camera-angle manifest, i.e. the expected image inventory. Defaults to the committed seed/angles.csv. */
+  SEED_MANIFEST: z.string().min(1).optional(),
   /** Explicit switch: serve the built SPA from WEB_DIST_DIR. Logged at startup. */
   SERVE_SPA: z.enum(['true', 'false']).default('false'),
   WEB_DIST_DIR: z.string().min(1).optional(),
@@ -21,6 +24,7 @@ export interface Config {
   port: number;
   host: string;
   kdefDir: string | undefined;
+  seedManifestPath: string;
   spa: { enabled: false } | { enabled: true; distDir: string };
   logLevel: z.infer<typeof EnvSchema>['LOG_LEVEL'];
 }
@@ -49,6 +53,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port: e.PORT,
     host: e.HOST,
     kdefDir: e.KDEF_DIR,
+    seedManifestPath: e.SEED_MANIFEST ?? DEFAULT_MANIFEST_PATH,
     spa: e.SERVE_SPA === 'true' ? { enabled: true, distDir: e.WEB_DIST_DIR! } : { enabled: false },
     logLevel: e.LOG_LEVEL,
   };

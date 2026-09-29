@@ -4,7 +4,7 @@ import { ConfigError, loadConfig } from './config.js';
 import { connect } from './db/connect.js';
 import { migrate } from './db/migrate.js';
 import { liveRng } from './rng.js';
-import { DEFAULT_MANIFEST_PATH, ensureImagesSeeded } from './seed/index.js';
+import { ensureImagesSeeded } from './seed/index.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     db,
     clock: liveClock,
     kdefDir: config.kdefDir,
-    manifestPath: DEFAULT_MANIFEST_PATH,
+    manifestPath: config.seedManifestPath,
     log: (line) => app.log.info(line),
   });
 

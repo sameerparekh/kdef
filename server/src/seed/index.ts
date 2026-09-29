@@ -107,7 +107,18 @@ async function loadImages(
     byAngle[p.angle]++;
   }
   const missingFromManifest = plan.filter((p) => !p.inManifest).length;
-  const unusedManifestEntries = manifest.size - (plan.length - missingFromManifest);
+  const found = new Set(files.map((f) => manifestKey(f.emotion, f.filename)));
+  const noFile = [...manifest.keys()].filter((k) => !found.has(k));
+  if (noFile.length > 0) {
+    // The manifest is the expected inventory. Entries with no file mean the dataset is
+    // incomplete, or the directory listing was (e.g. a network share seen through Docker).
+    // Refuse rather than seed a partial set; nothing has been inserted yet, so a restart retries.
+    throw new Error(
+      `seed: ${noFile.length} manifest entries have no file in ${kdefDir} ` +
+        `(first: ${noFile.slice(0, 5).join(', ')}). The dataset or its directory listing is ` +
+        `incomplete; refusing to seed a partial set (manifest: ${deps.manifestPath}).`,
+    );
+  }
   log(`seed: loading ${files.length} images from ${kdefDir}${opts.upsert ? ' (upsert)' : ''}`);
 
   await db.transaction().execute(async (trx) => {
@@ -143,8 +154,7 @@ async function loadImages(
   log(`seed: per emotion: ${fmt(byEmotion)}`);
   log(`seed: per angle: ${fmt(byAngle)}`);
   log(
-    `seed: ${missingFromManifest} missing from the manifest (stored as unknown); ` +
-      `${unusedManifestEntries} manifest entries matched no file (${deps.manifestPath})`,
+    `seed: ${missingFromManifest} missing from the manifest (stored as unknown) (${deps.manifestPath})`,
   );
   return { status: 'seeded', inserted: files.length, byEmotion, byAngle, elapsedMs };
 }
