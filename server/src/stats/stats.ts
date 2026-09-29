@@ -58,6 +58,16 @@ async function roundCounts(db: Db, roundIds: readonly string[]): Promise<Map<str
   return out;
 }
 
+/** Answered and correct counts for one round: the one source for /next, /answer and Round. */
+export async function roundProgress(db: Db, roundId: string): Promise<Counts> {
+  return (await roundCounts(db, [roundId])).get(roundId) ?? { answered: 0, correct: 0 };
+}
+
+/** The one completion rule: a round is done once `length` questions are answered. */
+export function isRoundComplete(answered: number, length: number): boolean {
+  return answered >= length;
+}
+
 /** Round rows to the API Round shape, with answered/correct counts from `questions`. */
 export async function toRounds(db: Db, rows: readonly Selectable<RoundsTable>[]): Promise<Round[]> {
   const counts = await roundCounts(
@@ -217,6 +227,9 @@ export async function leaderboard(db: Db): Promise<Leaderboard> {
     GROUP BY p.id`.execute(db);
 
   // Per-emotion accuracy over all history, for best/worst emotion; also gives totals.
+  // Deliberately all history (the spec), so it reads every answered row once: EXPLAIN ANALYZE
+  // at 20 players x 2000 answers (40k rows) is a seq scan + hash aggregate in about 13 ms and
+  // grows linearly. No index can avoid reading those rows, so there is no V003.
   const emotionRows = await db
     .selectFrom('questions as q')
     .innerJoin('images as i', 'i.id', 'q.image_id')

@@ -22,7 +22,7 @@ import {
 import type { AppDeps } from '../app.js';
 import type { Db } from '../db/connect.js';
 import { HttpError, conflict, notFound } from '../errors.js';
-import { toRound } from '../stats/stats.js';
+import { isRoundComplete, roundProgress, toRound } from '../stats/stats.js';
 import { ROUND_LENGTH } from './config.js';
 
 export const imageUrl = (imageId: string) => `/api/images/${imageId}`;
@@ -90,13 +90,9 @@ export async function nextQuestion(
       };
     }
 
-    const { answered } = await trx
-      .selectFrom('questions')
-      .select(sql<string>`count(*)`.as('answered'))
-      .where('round_id', '=', roundId)
-      .executeTakeFirstOrThrow();
-    const answeredCount = Number(answered);
-    if (answeredCount >= round.length) return { status: 'complete' };
+    // No open question, so every question in the round is answered.
+    const { answered: answeredCount } = await roundProgress(trx, roundId);
+    if (isRoundComplete(answeredCount, round.length)) return { status: 'complete' };
 
     const available = (
       await trx
@@ -157,7 +153,7 @@ export async function nextQuestion(
       recentSubjectKeys: recent.slice(0, RECENT_SUBJECT_AVOIDANCE).map((r) => r.subject_key),
       rng,
     });
-    if (!picked) throw new HttpError(503, 'no_images', `There are no ${emotion} images to quiz on`);
+    if (!picked) throw new HttpError(503, 'no_images', 'There are no images to quiz on');
 
     const position = answeredCount + 1;
     const q = await trx
@@ -189,6 +185,20 @@ export async function answerQuestion(
   chosen: Emotion,
 ): Promise<AnswerResponse> {
   return db.transaction().execute(async (trx): Promise<AnswerResponse> => {
+    // Lock order is round, then question, matching nextQuestion (which locks the round and
+    // inserts questions), so the two routes cannot deadlock.
+    const owner = await trx
+      .selectFrom('questions')
+      .select('round_id')
+      .where('id', '=', questionId)
+      .executeTakeFirst();
+    if (!owner) throw notFound('Question');
+    const round = await trx
+      .selectFrom('rounds')
+      .selectAll()
+      .where('id', '=', owner.round_id)
+      .forUpdate()
+      .executeTakeFirstOrThrow();
     const q = await trx
       .selectFrom('questions')
       .selectAll()
@@ -224,20 +234,10 @@ export async function answerQuestion(
       .where('id', '=', questionId)
       .execute();
 
-    // Round lock: complete once `length` questions are answered.
-    const round = await trx
-      .selectFrom('rounds')
-      .selectAll()
-      .where('id', '=', q.round_id)
-      .forUpdate()
-      .executeTakeFirstOrThrow();
-    const { answered } = await trx
-      .selectFrom('questions')
-      .select(sql<string>`count(*)`.as('answered'))
-      .where('round_id', '=', q.round_id)
-      .where('answered_at', 'is not', null)
-      .executeTakeFirstOrThrow();
-    const roundComplete = Number(answered) >= round.length;
+    const roundComplete = isRoundComplete(
+      (await roundProgress(trx, round.id)).answered,
+      round.length,
+    );
     if (roundComplete && round.ended_at === null) {
       await trx.updateTable('rounds').set({ ended_at: now }).where('id', '=', round.id).execute();
     }

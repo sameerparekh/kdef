@@ -23,7 +23,7 @@ export function bestAndWorst(counts: readonly EmotionCounts[]): {
 } {
   const qualified = counts
     .filter((c) => c.answered >= LEADERBOARD_EMOTION_MIN_ANSWERS)
-    .map((c) => ({ emotion: c.emotion, accuracy: c.correct / c.answered }))
+    .map((c) => ({ emotion: c.emotion, accuracy: accuracyOf(c.answered, c.correct) ?? 0 }))
     .sort((a, b) => EMOTIONS.indexOf(a.emotion) - EMOTIONS.indexOf(b.emotion));
   const [first] = qualified;
   if (!first) return { best: null, worst: null };
@@ -56,7 +56,7 @@ export function rankPlayers<T extends RankInput>(
 ): { item: T; rank: number | null }[] {
   const ranked = players.filter((p) => p.windowAnswered >= LEADERBOARD_MIN_ANSWERS);
   const unranked = players.filter((p) => p.windowAnswered < LEADERBOARD_MIN_ANSWERS);
-  const acc = (p: RankInput) => p.windowCorrect / p.windowAnswered;
+  const acc = (p: RankInput) => accuracyOf(p.windowAnswered, p.windowCorrect) ?? 0;
   const byCreated = (a: RankInput, b: RankInput) => a.createdAt.localeCompare(b.createdAt);
 
   ranked.sort((a, b) => acc(b) - acc(a) || b.windowAnswered - a.windowAnswered || byCreated(a, b));

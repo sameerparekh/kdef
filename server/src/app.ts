@@ -35,6 +35,15 @@ export async function buildApp(
       const body: ApiError = { error: err.code, message: err.message };
       return reply.status(err.statusCode).send(body);
     }
+    // Fastify's own client errors (bad JSON, empty body, wrong content type, ...).
+    const status = (err as { statusCode?: number }).statusCode;
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      const body: ApiError = {
+        error: status === 404 ? 'not_found' : 'bad_request',
+        message: err instanceof Error ? err.message : 'Bad request',
+      };
+      return reply.status(status).send(body);
+    }
     req.log.error({ err }, 'unhandled error');
     const body: ApiError = { error: 'internal', message: 'Internal server error' };
     return reply.status(500).send(body);
