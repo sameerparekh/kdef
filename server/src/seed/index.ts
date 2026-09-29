@@ -7,7 +7,7 @@ import type { Clock } from '../clock.js';
 import type { Db } from '../db/connect.js';
 import type { ImagesTable } from '../db/schema.js';
 import { jpegSize } from './jpeg.js';
-import { manifestKey, readAngleManifest, type AngleManifest } from './manifest.js';
+import { manifestKey, readAngleManifest } from './manifest.js';
 
 export { DEFAULT_MANIFEST_PATH } from './manifest.js';
 
@@ -91,14 +91,29 @@ async function loadImages(
   const emotionIds = await loadEmotionIds(db);
   const createdAt = clock.now();
 
+  // The one place a file's angle is decided; the inserted rows and the logged tallies both read it.
+  const plan = files.map((file) => {
+    const fromManifest = manifest.get(manifestKey(file.emotion, file.filename));
+    return {
+      file,
+      angle: fromManifest ?? ('unknown' as const),
+      inManifest: fromManifest !== undefined,
+    };
+  });
   const byEmotion = Object.fromEntries(EMOTIONS.map((e) => [e, 0])) as Record<Emotion, number>;
   const byAngle = Object.fromEntries(ANGLES.map((a) => [a, 0])) as Record<Angle, number>;
+  for (const p of plan) {
+    byEmotion[p.file.emotion]++;
+    byAngle[p.angle]++;
+  }
+  const missingFromManifest = plan.filter((p) => !p.inManifest).length;
+  const unusedManifestEntries = manifest.size - (plan.length - missingFromManifest);
   log(`seed: loading ${files.length} images from ${kdefDir}${opts.upsert ? ' (upsert)' : ''}`);
 
   await db.transaction().execute(async (trx) => {
     for (let i = 0; i < files.length; i += BATCH_SIZE) {
       const rows = await Promise.all(
-        files.slice(i, i + BATCH_SIZE).map((f) => buildRow(f, emotionIds, manifest, createdAt)),
+        plan.slice(i, i + BATCH_SIZE).map((p) => buildRow(p.file, p.angle, emotionIds, createdAt)),
       );
       const insert = trx.insertInto('images').values(rows);
       await (
@@ -119,10 +134,6 @@ async function loadImages(
     }
   });
 
-  for (const f of files) {
-    byEmotion[f.emotion]++;
-    byAngle[manifest.get(manifestKey(f.emotion, f.filename)) ?? 'unknown']++;
-  }
   const elapsedMs = clock.now().getTime() - startedAt.getTime();
   const fmt = (o: Record<string, number>) =>
     Object.entries(o)
@@ -131,7 +142,10 @@ async function loadImages(
   log(`seed: ${opts.upsert ? 'upserted' : 'inserted'} ${files.length} images in ${elapsedMs} ms`);
   log(`seed: per emotion: ${fmt(byEmotion)}`);
   log(`seed: per angle: ${fmt(byAngle)}`);
-  log(`seed: ${byAngle.unknown} unknown angle (not in ${deps.manifestPath})`);
+  log(
+    `seed: ${missingFromManifest} missing from the manifest (stored as unknown); ` +
+      `${unusedManifestEntries} manifest entries matched no file (${deps.manifestPath})`,
+  );
   return { status: 'seeded', inserted: files.length, byEmotion, byAngle, elapsedMs };
 }
 
@@ -148,8 +162,11 @@ async function scanDataset(kdefDir: string): Promise<DatasetFile[]> {
     let entries;
     try {
       entries = await readdir(folder, { withFileTypes: true });
-    } catch {
-      throw new Error(`KDEF_DIR is missing the emotion folder "${emotion}" (${folder}).`);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? 'unknown error';
+      throw new Error(
+        `KDEF_DIR: cannot read the emotion folder "${emotion}" (${folder}): ${code}. It must exist and be readable.`,
+      );
     }
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.name.startsWith('.')) continue;
@@ -184,8 +201,8 @@ async function loadEmotionIds(db: Db): Promise<Map<Emotion, number>> {
 
 async function buildRow(
   f: DatasetFile,
+  angle: Angle,
   emotionIds: Map<Emotion, number>,
-  manifest: AngleManifest,
   createdAt: Date,
 ): Promise<Insertable<ImagesTable>> {
   const content = await readFile(f.fullPath);
@@ -199,7 +216,7 @@ async function buildRow(
     emotion_id: emotionIds.get(f.emotion)!,
     subject_key: f.subjectKey,
     source_file: f.filename,
-    angle: manifest.get(manifestKey(f.emotion, f.filename)) ?? 'unknown',
+    angle,
     content,
     content_type: 'image/jpeg',
     sha256: createHash('sha256').update(content).digest('hex'),
