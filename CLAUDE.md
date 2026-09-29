@@ -7,6 +7,7 @@ Context for AI coding agents (and humans) working in this repo. `AGENTS.md` is a
 An adaptive quiz: a player sees a face from the KDEF dataset and picks one of 7 emotions (angry, disgust, fear, happy, neutral, sad, surprise). Several players can play, each with a profile picked from a "Who's playing?" screen; there are no passwords. The quiz adapts per player: **emotions** a player misses come up more often, and angled (half-profile) photos ramp in as the player masters the frontal ones. It trains the emotion, not individual photos, so photos a player missed get no priority. There is also a leaderboard.
 
 - Runs locally with `docker compose up --build` → http://localhost:8080.
+- LAN access is on by default: compose publishes `${KDEF_BIND:-0.0.0.0}:${KDEF_PORT:-8080}:8080` and the server's `HOST` defaults to `0.0.0.0`. From another device open `http://<host-LAN-IP>:8080` (`ipconfig getifaddr en0` on macOS; the container cannot see it, so the startup log only shows the container-side bind). The host firewall (macOS Application Firewall, ufw) may need to allow the port. `KDEF_BIND=127.0.0.1` restricts to the host. `e2e/docker-compose.e2e.yml` replaces `ports` with `!override`, so e2e is unaffected.
 - Everything lives in Postgres, including the images. On first startup (empty `images` table) the server loads them from `KDEF_DIR`.
 - **KDEF images are licensed for non-commercial research. Never commit them** (`.gitignore` blocks `*.jpg` outside test fixtures). `seed/angles.csv` is metadata only.
 - A Render deploy may come later. Keep config env-driven and do not depend on a filesystem once the images are seeded.
@@ -29,7 +30,7 @@ npm install && npm run hooks:install
 npm run db:up                      # postgres on localhost:55432
 cp .env.example .env
 npm run dev -w server              # API on :8080
-npm run dev -w web                 # SPA on :5173, proxies /api
+npm run dev -w web                 # SPA on :5173 (all interfaces, so http://<LAN-IP>:5173 works), proxies /api
 VITE_MOCK_API=true npm run dev -w web  # SPA on :5173 against in-memory MSW mocks, no server needed
 npm run reseed -w server           # re-read KDEF_DIR and upsert images (ids kept, nothing deleted)
 npm test                           # server feature tests (real Postgres) + web tests

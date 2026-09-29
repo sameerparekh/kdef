@@ -32,7 +32,9 @@ services:
       DATABASE_URL: postgres://kdef:kdef@db:5432/kdef
       KDEF_DIR: /data/kdef
     ports:
-      - '8080:8080'
+      # Published on every interface so other devices on the LAN can connect. Set KDEF_BIND=127.0.0.1
+      # to restrict to this machine; KDEF_PORT changes the host port.
+      - '${KDEF_BIND:-0.0.0.0}:${KDEF_PORT:-8080}:8080'
     volumes:
       - ${KDEF_HOST_DIR:-/Volumes/brenn/KDEF}:/data/kdef:ro
 

@@ -8,6 +8,8 @@ export default defineConfig(({ command }) => ({
   plugins: [react()],
   server: {
     port: 5173,
+    // All interfaces, so the dev SPA can be opened from another device on the LAN.
+    host: true,
     // In dev the API runs separately (npm run dev -w server); in Docker it serves the SPA itself.
     proxy: { '/api': 'http://localhost:8080' },
   },
