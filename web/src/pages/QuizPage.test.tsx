@@ -41,7 +41,6 @@ function recordRequests() {
 
 afterEach(() => {
   vi.useRealTimers();
-  server.events.removeAllListeners();
 });
 
 const button = (emotion: string) => screen.getByRole('button', { name: new RegExp(emotion, 'i') });

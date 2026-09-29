@@ -1,32 +1,7 @@
 /// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
-import { rmSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { defineConfig, type Plugin } from 'vite';
-
-/**
- * public/ is copied into every build, so assets added there later ship. The exception is MSW's
- * mockServiceWorker.js, which only a build made for mock mode (VITE_MOCK_API=true) should carry;
- * this removes it from the output of any other build.
- */
-function omitMockServiceWorker(): Plugin {
-  let outDir = '';
-  return {
-    name: 'kdef:omit-mock-service-worker',
-    apply: 'build',
-    configResolved(config) {
-      outDir = resolve(config.root, config.build.outDir);
-    },
-    closeBundle: {
-      order: 'post',
-      handler() {
-        if (process.env.VITE_MOCK_API !== 'true') {
-          rmSync(resolve(outDir, 'mockServiceWorker.js'), { force: true });
-        }
-      },
-    },
-  };
-}
+import { defineConfig } from 'vite';
+import { omitMockServiceWorker } from './vite/omitMockServiceWorker';
 
 export default defineConfig({
   plugins: [react(), omitMockServiceWorker()],

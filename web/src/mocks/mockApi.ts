@@ -4,6 +4,7 @@ import {
   ApiError,
   CreatePlayerRequest,
   EMOTIONS,
+  ERROR_CODES,
   PLAYER_COLORS,
   type Angle,
   type AngleTally,
@@ -17,6 +18,8 @@ import {
   type PlayerStats,
   type Question,
   type Round,
+  formatZodIssues,
+  notFoundMessage,
 } from '@kdef/shared';
 import { http, HttpResponse, type RequestHandler } from 'msw';
 import type { ZodError } from 'zod';
@@ -96,15 +99,10 @@ export function createMockApi(options: MockOptions = {}): MockApi {
 
   const error = (status: number, code: string, message: string) =>
     HttpResponse.json(ApiError.parse({ error: code, message }), { status });
-  // Codes and messages below are the server's: server/src/errors.ts (notFound, conflict, parseOr400).
-  const notFound = (what: string) => error(404, 'not_found', `${what} not found`);
-  /** Same "path: message; ..." text as `parseOr400` in server/src/errors.ts. */
+  // Codes and message builders come from @kdef/shared, which server/src/errors.ts also uses.
+  const notFound = (what: string) => error(404, ERROR_CODES.notFound, notFoundMessage(what));
   const badRequest = (err: ZodError) =>
-    error(
-      400,
-      'bad_request',
-      err.issues.map((i) => `${i.path.join('.') || '(body)'}: ${i.message}`).join('; '),
-    );
+    error(400, ERROR_CODES.badRequest, formatZodIssues(err.issues));
 
   const questionsOf = (round: MockRound) => round.questionIds.map((id) => questions.get(id)!);
   const playerRounds = (playerId: string) =>
@@ -133,7 +131,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       if (!parsed.success) return badRequest(parsed.error);
       const name = parsed.data.displayName;
       if (players.some((p) => p.displayName.toLowerCase() === name.toLowerCase())) {
-        return error(409, 'conflict', `A player named "${name}" already exists`);
+        return error(409, ERROR_CODES.conflict, `A player named "${name}" already exists`);
       }
       const player: Player = {
         id: nextId(),
@@ -206,7 +204,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       const q = questions.get(String(params.id));
       if (!q) return notFound('Question');
       if (q.chosen !== null)
-        return error(409, 'conflict', 'This question has already been answered');
+        return error(409, ERROR_CODES.conflict, 'This question has already been answered');
       const round = rounds.get(q.roundId)!;
       q.chosen = parsed.data.emotion;
       const correct = q.chosen === q.emotion;
