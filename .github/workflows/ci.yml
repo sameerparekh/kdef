@@ -87,6 +87,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
+      - run: npm run build -w shared && npx tsc -p e2e
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
       - name: Upload Playwright report

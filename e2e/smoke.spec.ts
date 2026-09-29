@@ -115,17 +115,15 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
   const board = Leaderboard.parse(await (await request.get('/api/leaderboard')).json());
   const entry = board.entries.find((e) => e.player.displayName === PLAYER_NAME);
   expect(entry?.windowAnswered).toBe(ROUND_LENGTH);
-  if (entry?.rank === null) {
-    const needed = board.minAnswers - ROUND_LENGTH;
-    await expect(
-      page.getByRole('list', { name: 'Not yet ranked' }).getByText(PLAYER_NAME),
-    ).toBeVisible();
-    await expect(page.getByText(`needs ${needed} more answers`)).toBeVisible();
-  } else {
-    await expect(
-      page.getByRole('table', { name: 'Leaderboard' }).getByText(PLAYER_NAME),
-    ).toBeVisible();
-  }
+  // One round is below the ranking threshold, so the player must be listed as unranked.
+  expect(ROUND_LENGTH).toBeLessThan(board.minAnswers);
+  expect(entry?.rank).toBeNull();
+  await expect(
+    page.getByRole('list', { name: 'Not yet ranked' }).getByText(PLAYER_NAME),
+  ).toBeVisible();
+  await expect(
+    page.getByText(`needs ${board.minAnswers - ROUND_LENGTH} more answers`),
+  ).toBeVisible();
   await expectNoEmotionInAlt(page);
 
   // 5. Restarting the app container skips seeding (the images are already in Postgres).
