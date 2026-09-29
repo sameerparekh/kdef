@@ -6,7 +6,7 @@
 
 The script never runs `sudo`, so mounting the share is a manual step.
 
-1. On the NAS (TNAS-A6E3, 192.168.10.63), export `/Volume1/brenn` read-only to the Plex host (192.168.10.43) in the NAS UI. Check from any machine: `showmount -e 192.168.10.63`.
+1. On the NAS (TNAS-A6E3, 192.168.10.63), export `/Volume1/brenn` read-only to the Plex host (192.168.10.43) in the NAS UI. `showmount -e 192.168.10.63` lists the exports on many NAS models but may not show an NFSv4-only one, so the mount itself is the real test.
 2. On the Plex host:
 
 ```
@@ -39,21 +39,28 @@ Then open `http://plex.lan:8088`. Options (flags win over environment variables)
 | `--port` | `DEPLOY_PORT` | `8088` |
 | | `DEPLOY_MOUNT` | `/mnt/brenn` |
 | | `DEPLOY_WAIT_SECS` | `300` |
+| | `DEPLOY_NAS_EXPORT` | `192.168.10.63:/Volume1/brenn` (only used in the printed fstab line) |
+| | `DEPLOY_SSH` | `ssh -o BatchMode=yes -o ConnectTimeout=10` |
 
 Port 8080 is taken on the Plex host (the wifihaven API), hence 8088. Postgres is published on the host's `127.0.0.1:55432` only, as in the local stack.
 
 What it does, in order:
 
 1. Resolves the ref to a commit locally (`git fetch origin` first when the ref starts with `origin/`).
-2. Preflight over SSH: Docker and Compose present, `/mnt/brenn` is a mount, `/mnt/brenn/KDEF/angry` is readable. If not, it stops before changing anything.
+2. Preflight over SSH: Docker, Compose and curl present, `/mnt/brenn` is a mount, `/mnt/brenn/KDEF/angry` is readable. If not, it stops before changing anything.
 3. Sends `git archive <commit>` over SSH and swaps it into `~/kdef/src`. This is used instead of a clone on the host because it deploys exactly that commit (including an unpushed one), needs no GitHub access from the host, and leaves no working tree to drift. `~/kdef/src/.deployed-sha` records what is running.
 4. Runs `docker compose -p kdef-plex up -d --build` with `KDEF_HOST_DIR=/mnt/brenn/KDEF` and the port.
 5. Polls `/api/health` on the host until it reports `images > 0`. The first seed takes about a minute over NFS. On timeout it prints the app logs and exits 1.
+
+## Old images
+
+Each deploy rebuilds the app image and leaves the previous one untagged, so disk use grows a little every time. The script does not prune, because other stacks run on the Plex host. To reclaim space by hand, look at `docker image ls --filter dangling=true` first, then run `docker image prune` (dangling images only; it does not touch volumes).
 
 ## Safety
 
 - Idempotent: rerun it any time. The compose project name is always `kdef-plex`, so the Postgres volume (`kdef-plex_pgdata`) is reused and players and history survive a redeploy.
 - It never deletes the volume: the script only runs `up`, never `down -v` or `volume rm`. To wipe the data on purpose, do it by hand on the host.
 - The share is mounted `ro` on the host and bind-mounted `:ro` into the container.
+- It replaces `~/kdef/src` only if that directory holds the `.deployed-sha` marker this script writes (or does not exist yet); otherwise it stops. `--dir` may not contain `.` or `..` components.
 - It touches only `~/kdef` and the `kdef-plex` compose project on the host. Other containers and mounts (`/mnt/media`, downloads, backups) are left alone.
 - The app has no authentication, so it is reachable by anything on the LAN at the port above.

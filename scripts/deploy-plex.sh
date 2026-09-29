@@ -47,7 +47,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$port" =~ ^[0-9]+$ ]] || die "port must be a number, got: $port"
-[[ "$dir" =~ ^[A-Za-z0-9._/-]+$ && "$dir" != /* && "$dir" != *..* ]] || die "remote dir must be a simple relative path, got: $dir"
+[[ "$dir" =~ ^[A-Za-z0-9._/-]+$ && "$dir" != /* ]] || die "remote dir must be a simple relative path, got: $dir"
+IFS=/ read -r -a dir_parts <<<"$dir"
+for part in "${dir_parts[@]}"; do
+  [[ -n "$part" && "$part" != . && "$part" != .. ]] || die "remote dir must be a simple relative path (no '.', '..' or empty components), got: $dir"
+done
 [[ "$mount_dir" == /* ]] || die "DEPLOY_MOUNT must be an absolute path, got: $mount_dir"
 kdef_dir="$mount_dir/KDEF"
 fstab_line="$nas_export  $mount_dir  nfs  retry=10,nofail,nfsvers=4,ro,hard,noatime,rsize=1048576,wsize=1048576,_netdev  0  0"
@@ -120,7 +124,8 @@ if ! mountpoint -q "$mount_dir" 2>/dev/null; then
   exit 3
 fi
 echo "ok: $mount_dir is mounted"
-if [ -d "$kdef_dir/angry" ] && ls "$kdef_dir/angry" >/dev/null 2>&1; then
+# The mount is "hard", so an unreachable NAS would hang ls forever; cap it where timeout exists.
+if [ -d "$kdef_dir/angry" ] && { if command -v timeout >/dev/null 2>&1; then timeout 20 ls "$kdef_dir/angry"; else ls "$kdef_dir/angry"; fi; } >/dev/null 2>&1; then
   echo "ok: $kdef_dir/angry is readable"
 else
   echo "MISSING: $kdef_dir/angry is not readable (is this the brenn share, with a KDEF folder?)"; problems=1
@@ -143,6 +148,8 @@ If the fstab line is already in /etc/fstab (grep brenn /etc/fstab), skip the 'te
 The NAS must export $nas_export read-only to this host (check: showmount -e ${nas_export%%:*}).
 MSG
   exit 1
+elif [[ "$rc" == 255 ]]; then
+  die "cannot reach $host over ssh (unreachable host or key auth failed); nothing was changed"
 elif [[ "$rc" != 0 ]]; then
   die "preflight failed (see MISSING lines above); nothing was changed on $host"
 fi
@@ -156,9 +163,17 @@ echo "deploy-plex: syncing $commit"
 sync_script='set -euo pipefail
 dir="$HOME/$1"
 mkdir -p "$dir"
+if [ -e "$dir/src" ] && [ ! -f "$dir/src/.deployed-sha" ]; then
+  echo "deploy-plex: $dir/src exists but has no .deployed-sha marker, so this script did not create it; not replacing it. Use another --dir or move it away." >&2
+  exit 1
+fi
 rm -rf "$dir/src.new"
 mkdir "$dir/src.new"
 tar -xf - -C "$dir/src.new"
+if [ ! -f "$dir/src.new/docker-compose.yml" ]; then
+  echo "deploy-plex: the archive did not contain docker-compose.yml; keeping the current src" >&2
+  exit 1
+fi
 echo "$2" > "$dir/src.new/.deployed-sha"
 rm -rf "$dir/src"
 mv "$dir/src.new" "$dir/src"'
