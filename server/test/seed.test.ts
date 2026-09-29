@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { EMOTIONS, Health } from '@kdef/shared';
 import { TestClock } from '../src/clock.js';
 import { DEFAULT_MANIFEST_PATH, ensureImagesSeeded, reseedImages } from '../src/seed/index.js';
+import { readAngleManifest } from '../src/seed/manifest.js';
 import { createTestApp, type TestContext } from './helpers/testApp.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -82,14 +83,34 @@ describe('image seeding', () => {
     await ensureImagesSeeded(deps());
     const row = await ctx.testDb.db
       .selectFrom('images')
-      .select('angle')
-      .where('source_file', '=', '1_11.jpg')
-      .where('emotion_id', '=', 6) // sad; this one is deliberately absent from the fixture manifest
+      .innerJoin('emotions', 'emotions.id', 'images.emotion_id')
+      .select('images.angle')
+      .where('emotions.name', '=', 'sad')
+      .where('images.source_file', '=', '1_11.jpg') // deliberately absent from the fixture manifest
       .executeTakeFirstOrThrow();
     expect(row.angle).toBe('unknown');
-    expect(logs.join('\n')).toMatch(/1 unknown/);
+    expect(logs.join('\n')).toMatch(/1 missing from the manifest/);
     expect(logs.join('\n')).toMatch(/angry: 6/);
     expect(logs.join('\n')).toMatch(/frontal: 14/);
+  });
+
+  it('logs manifest entries that match no file, and does not count manifest unknowns as missing', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'kdef-manifest-test-'));
+    try {
+      const manifest = path.join(dir, 'angles.csv');
+      const base = await readFile(FIXTURE_MANIFEST, 'utf8');
+      const kept = base.split('\n').filter((l) => l !== 'angry,0_3.jpg,half_left');
+      await writeFile(
+        manifest,
+        `${kept.join('\n')}angry,0_3.jpg,unknown\nangry,99_99.jpg,frontal\n`,
+      );
+      await ensureImagesSeeded(deps({ manifestPath: manifest }));
+      const out = logs.join('\n');
+      expect(out).toMatch(/1 manifest entries matched no file/);
+      expect(out).toMatch(/1 missing from the manifest/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('skips when images are already present, without touching the KDEF directory', async () => {
@@ -237,5 +258,17 @@ describe('committed manifest', () => {
     expect(lines.length).toBeGreaterThan(1);
     const sorted = [...lines.slice(1)].sort();
     expect(lines.slice(1)).toEqual(sorted);
+  });
+
+  it('parses with the seeder reader and has at most one of each angle per group', async () => {
+    const manifest = await readAngleManifest(DEFAULT_MANIFEST_PATH);
+    const seen = new Set<string>();
+    for (const [key, angle] of manifest) {
+      if (angle === 'unknown') continue;
+      const [emotion, filename] = key.split('/') as [string, string];
+      const group = `${emotion}/${filename.split('_')[0]}/${angle}`;
+      expect(seen.has(group), `duplicate ${angle} in ${emotion} subject ${filename}`).toBe(false);
+      seen.add(group);
+    }
   });
 });
