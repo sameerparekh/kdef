@@ -19,6 +19,9 @@ services:
       retries: 30
 
   app:
+    # Restarts on ANY startup failure (config, migration, seeding), at most 5 times. The main
+    # case is seeding refusing an incomplete directory listing from a network share.
+    restart: on-failure:5
     build:
       context: .
       dockerfile: docker/Dockerfile
