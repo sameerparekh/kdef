@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { EMOTIONS, Health } from '@kdef/shared';
 import { TestClock } from '../src/clock.js';
-import { DEFAULT_MANIFEST_PATH, ensureImagesSeeded, reseedImages } from '../src/seed/index.js';
-import { readAngleManifest } from '../src/seed/manifest.js';
+import { ensureImagesSeeded, reseedImages } from '../src/seed/index.js';
+import { DEFAULT_MANIFEST_PATH, readAngleManifest } from '../src/seed/manifest.js';
 import { createTestApp, type TestContext } from './helpers/testApp.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -103,6 +103,8 @@ describe('image seeding', () => {
       await expect(ensureImagesSeeded(deps({ manifestPath: manifest }))).rejects.toThrow(
         /1 manifest entries have no file.*angry\/99_99\.jpg/s,
       );
+      // Refused before any batch was read or inserted, not rolled back afterwards.
+      expect(logs.join('\n')).not.toMatch(/seed: loading/);
       const n = await ctx.testDb.db
         .selectFrom('images')
         .select((eb) => eb.fn.countAll<string>().as('n'))
@@ -133,6 +135,34 @@ describe('image seeding', () => {
     const second = await ensureImagesSeeded(deps({ kdefDir: undefined }));
     expect(second).toEqual({ status: 'skipped', existing: FIXTURE_COUNT });
     expect(logs).toEqual([`seed: skipped, ${FIXTURE_COUNT} images present`]);
+  });
+
+  it('refuses to boot when an already-seeded table is missing manifest images, pointing at reseed', async () => {
+    await ensureImagesSeeded(deps());
+    await ctx.testDb.db.deleteFrom('images').where('source_file', '=', '0_3.jpg').execute();
+    await expect(ensureImagesSeeded(deps({ kdefDir: undefined }))).rejects.toThrow(
+      /manifest images are missing from the images table.*reseed/s,
+    );
+  });
+
+  it('reseed also refuses an incomplete listing, before touching existing rows', async () => {
+    await ensureImagesSeeded(deps());
+    const before = await ctx.testDb.db.selectFrom('images').select(['id', 'sha256']).execute();
+    const dir = await mkdtemp(path.join(tmpdir(), 'kdef-manifest-test-'));
+    try {
+      const manifest = path.join(dir, 'angles.csv');
+      await writeFile(
+        manifest,
+        `${await readFile(FIXTURE_MANIFEST, 'utf8')}fear,98_98.jpg,frontal\n`,
+      );
+      logs = [];
+      await expect(reseedImages(deps({ manifestPath: manifest }))).rejects.toThrow(/98_98\.jpg/);
+      expect(logs.join('\n')).not.toMatch(/seed: loading/);
+      const after = await ctx.testDb.db.selectFrom('images').select(['id', 'sha256']).execute();
+      expect(after).toEqual(before);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('crashes with a clear message when the table is empty and KDEF_DIR is unset', async () => {
