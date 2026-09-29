@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
 /**
  * The only source of randomness in the server. Inject it; never call Math.random()
@@ -9,10 +9,12 @@ export interface Rng {
   next(): number;
 }
 
-const TWO_POW_48 = 2 ** 48;
+const RANDOM_BYTES = 6;
+const TWO_POW_48 = 2 ** (8 * RANDOM_BYTES);
 
 export const liveRng: Rng = {
-  next: () => randomInt(0, TWO_POW_48) / TWO_POW_48,
+  // 48 random bits scaled into [0, 1). (crypto.randomInt caps its range below 2^48.)
+  next: () => randomBytes(RANDOM_BYTES).readUIntBE(0, RANDOM_BYTES) / TWO_POW_48,
 };
 
 /** mulberry32: small, fast, deterministic PRNG for tests and simulations. */
