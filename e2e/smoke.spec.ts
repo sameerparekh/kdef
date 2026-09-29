@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { EMOTIONS, Leaderboard, PlayerList } from '@kdef/shared';
+import { AnswerResponse, EMOTIONS, Leaderboard, PlayerList } from '@kdef/shared';
 import { expect, test, type Page } from '@playwright/test';
 
 const ROUND_LENGTH = 20;
@@ -69,31 +69,41 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
     }
 
     // We cannot know the right answer, so cycle through the keys; some land, some miss.
+    // Branch on what the server said, not on what the page happens to show.
+    const answered = page.waitForResponse((r) => /\/api\/questions\/[^/]+\/answer$/.test(r.url()));
     await page.keyboard.press(String((q % EMOTIONS.length) + 1));
-    const correct = page.getByRole('status').filter({ hasText: 'Correct!' });
-    const wrong = page.getByRole('status').filter({ hasText: 'Not quite' });
-    await expect(correct.or(wrong)).toBeVisible();
+    const result = AnswerResponse.parse(await (await answered).json());
 
-    if (await wrong.isVisible()) {
+    // A correct answer moves on by itself; only a miss stops and waits for Next / Enter.
+    const wrong = page.getByRole('status').filter({ hasText: 'Not quite' });
+    const moved =
+      q < ROUND_LENGTH
+        ? page.getByText(`Question ${q + 1} of ${ROUND_LENGTH}`)
+        : page.getByRole('heading', { name: 'Round complete' });
+
+    if (result.correct) {
+      hits++;
+      await expect(moved).toBeVisible();
+      await expect(wrong).toHaveCount(0);
+      await expect(page.getByRole('img', { name: 'Same person, for comparison' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^(Next|See results)$/ })).toHaveCount(0);
+    } else {
       misses++;
+      await expect(wrong).toBeVisible();
       await expect(page.getByRole('img', { name: 'Same person, for comparison' })).toBeVisible();
       await expect(page.getByText(/looks like on this person/)).toBeVisible();
       await expectNoEmotionInAlt(page);
-    } else {
-      hits++;
-      await expect(page.getByRole('img', { name: 'Same person, for comparison' })).toHaveCount(0);
-    }
-
-    if (q < ROUND_LENGTH) {
-      await page.keyboard.press('Enter');
-    } else {
-      await expect(page.getByRole('button', { name: 'See results' })).toBeVisible();
+      // Still on this question: a miss does not advance by itself.
+      await expect(page.getByText(`Question ${q} of ${ROUND_LENGTH}`)).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: q < ROUND_LENGTH ? 'Next' : 'See results' }),
+      ).toBeVisible();
       await page.keyboard.press('Enter');
     }
   }
   expect(hits + misses).toBe(ROUND_LENGTH);
   // The shown emotion comes from the live RNG, so a miss is probable, not guaranteed: each press
-  // hits with p of about 1/7, so P(no miss in 20) is about 1e-17. The Correct! branch is the
+  // hits with p of about 1/7, so P(no miss in 20) is about 1e-17. The auto-advance branch is the
   // opposite case: P(no hit in 20) is about 4.6%, so it is checked whenever it occurs but is NOT
   // guaranteed to be covered by any single run.
   expect(misses, 'the contrast image path was never exercised').toBeGreaterThan(0);

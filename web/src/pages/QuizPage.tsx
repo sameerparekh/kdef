@@ -6,6 +6,7 @@ import { ApiRequestError } from '../api/client';
 import { qk, useCurrentQuestion, useSubmitAnswer } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
 import { emotionLabel } from '../lib/format';
+import { CORRECT_ADVANCE_MS } from '../lib/timing';
 
 /** Alt text must never reveal the emotion, so it is generic. */
 const FACE_ALT = 'Face to identify';
@@ -96,12 +97,23 @@ function QuestionView({
     else onNext();
   }
 
+  // A correct answer moves on by itself after a short confirmation. The single-answer guard
+  // stays locked meanwhile (result is set), so keys pressed during the pause do nothing.
+  const autoAdvance = result?.correct === true;
+  useEffect(() => {
+    if (!autoAdvance) return;
+    const timer = setTimeout(advance, CORRECT_ADVANCE_MS);
+    return () => clearTimeout(timer);
+    // Only [autoAdvance]: `advance` is deliberately left out. It closes over `result`, which cannot
+    // change once set, and QuestionView remounts per question, so the timer never sees a stale one.
+  }, [autoAdvance]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Enter') {
         // A focused button handles Enter itself via click.
-        if (result && !(e.target instanceof HTMLButtonElement)) {
+        if (result && !result.correct && !(e.target instanceof HTMLButtonElement)) {
           e.preventDefault();
           advance();
         }
@@ -142,13 +154,15 @@ function QuestionView({
         {result ? (
           <>
             <FeedbackBanner result={result} />
-            <button
-              type="button"
-              onClick={advance}
-              className="ml-auto rounded-lg bg-slate-900 px-6 py-3 text-lg font-semibold text-white"
-            >
-              {result.roundComplete ? 'See results' : 'Next'}
-            </button>
+            {result.correct ? null : (
+              <button
+                type="button"
+                onClick={advance}
+                className="ml-auto rounded-lg bg-slate-900 px-6 py-3 text-lg font-semibold text-white"
+              >
+                {result.roundComplete ? 'See results' : 'Next'}
+              </button>
+            )}
           </>
         ) : submit.isError ? (
           <ErrorMessage error={submit.error} what="Could not save your answer, try again" />
