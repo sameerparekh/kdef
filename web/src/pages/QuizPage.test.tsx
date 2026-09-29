@@ -213,6 +213,29 @@ describe('QuizPage', () => {
     expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
   });
 
+  it('on a miss shows the right emotion and the contrast photo labelled with the guess', async () => {
+    const api = await startQuiz();
+    const q = currentQuestion(api);
+    const wrong = otherThan(q.emotion);
+    const user = userEvent.setup();
+    await user.click(button(wrong));
+    expect(await screen.findByText(new RegExp(`it was ${label(q.emotion)}`))).toBeInTheDocument();
+    expect(screen.getByText(`What ${label(wrong)} looks like on this person`)).toBeInTheDocument();
+    expect(screen.getByAltText('Same person, for comparison')).toHaveAttribute(
+      'src',
+      expect.stringMatching(/^\/api\/images\//),
+    );
+  });
+
+  it('answers with keys 1-7', async () => {
+    const api = await startQuiz();
+    const q = currentQuestion(api);
+    const user = userEvent.setup();
+    await user.keyboard(String(EMOTIONS.indexOf(q.emotion) + 1));
+    expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
+    expect(api.state.questions.get(q.id)?.chosen).toBe(q.emotion);
+  });
+
   it('advances with the Next button and updates progress', async () => {
     const api = await startQuiz();
     const user = userEvent.setup();
