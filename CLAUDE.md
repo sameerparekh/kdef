@@ -10,6 +10,7 @@ An adaptive quiz: a player sees a face from the KDEF dataset and picks one of 7 
 - LAN access is on by default: compose publishes `${KDEF_BIND:-0.0.0.0}:${KDEF_PORT:-8080}:8080` and the server's `HOST` defaults to `0.0.0.0`. From another device open `http://<host-LAN-IP>:8080` (`ipconfig getifaddr en0` on macOS; the container cannot see it, so the startup log only shows the container-side bind). The host firewall (macOS Application Firewall, ufw) may need to allow the port. `KDEF_BIND=127.0.0.1` restricts the app to the host; Postgres (55432) is always published on `127.0.0.1` only. `e2e/docker-compose.e2e.yml` replaces `ports` with `!override`, so e2e is unaffected.
 - Everything lives in Postgres, including the images. On first startup (empty `images` table) the server loads them from `KDEF_DIR`.
 - **KDEF images are licensed for non-commercial research. Never commit them** (`.gitignore` blocks `*.jpg` outside test fixtures). `seed/angles.csv` is metadata only.
+- The Plex host (`plex.lan`) is deployed with `scripts/deploy-plex.sh` (compose project `kdef-plex`, port 8088, photos on a read-only NFS mount at `/mnt/brenn`; it never runs sudo or deletes the volume). → [`docs/deploy-plex.md`](docs/deploy-plex.md)
 - A Render deploy may come later. Keep config env-driven and do not depend on a filesystem once the images are seeded.
 
 ## Layout

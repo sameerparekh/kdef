@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,6 +98,43 @@ describe('scripts/deploy-plex.sh', () => {
     const text = readFileSync(script, 'utf8');
     expect(text).not.toMatch(/compose[^\n]*\bdown\b/);
     expect(text).not.toMatch(/volume\s+(rm|prune)/);
+  });
+
+  it('syncs the ref, runs compose with the fixed project and mount, and waits for health', () => {
+    // Stub docker, mountpoint and curl on the "remote" PATH so the whole flow runs locally.
+    const bin = join(tmp, 'bin');
+    const home = join(tmp, 'home');
+    const mount = join(tmp, 'mnt');
+    const dockerLog = join(tmp, 'docker.log');
+    mkdirSync(bin);
+    mkdirSync(join(mount, 'KDEF', 'angry'), { recursive: true });
+    mkdirSync(home);
+    const stub = (name: string, body: string) => {
+      writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${body}\n`);
+      chmodSync(join(bin, name), 0o755);
+    };
+    stub('mountpoint', 'exit 0');
+    stub('curl', `echo '{"status":"ok","images":882}'`);
+    stub(
+      'docker',
+      `echo "KDEF_HOST_DIR=$KDEF_HOST_DIR KDEF_PORT=$KDEF_PORT docker $*" >> '${dockerLog}'\n` +
+        `case "$*" in "version --format"*) echo 29.0.0;; "compose version --short") echo 5.0.0;; esac`,
+    );
+    const { code, out } = run(['--port', '8099'], {
+      DEPLOY_HOST: 'plex.test',
+      DEPLOY_MOUNT: mount,
+      HOME: home,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+    });
+    expect(code).toBe(0);
+    expect(out).toContain('http://plex.test:8099');
+    expect(readFileSync(dockerLog, 'utf8')).toContain(
+      `KDEF_HOST_DIR=${mount}/KDEF KDEF_PORT=8099 docker compose -p kdef-plex up -d --build`,
+    );
+    expect(existsSync(join(home, 'kdef', 'src', 'docker-compose.yml'))).toBe(true);
+    expect(readFileSync(join(home, 'kdef', 'src', '.deployed-sha'), 'utf8').trim()).toMatch(
+      /^[0-9a-f]{40}$/,
+    );
   });
 
   it('rejects an unusable remote directory', () => {
