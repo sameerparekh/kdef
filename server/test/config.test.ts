@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig } from '../src/config.js';
+import { ConfigError, describeBind, loadConfig } from '../src/config.js';
 import { DEFAULT_MANIFEST_PATH } from '../src/seed/manifest.js';
 
 describe('loadConfig', () => {
@@ -37,5 +37,34 @@ describe('loadConfig', () => {
       loadConfig({ DATABASE_URL: 'postgres://u:p@h/db', SEED_MANIFEST: '/fixtures/angles.csv' })
         .seedManifestPath,
     ).toBe('/fixtures/angles.csv');
+  });
+
+  it('binds all interfaces by default and lets HOST narrow it', () => {
+    expect(loadConfig({ DATABASE_URL: 'postgres://u:p@h/db' }).host).toBe('0.0.0.0');
+    expect(loadConfig({ DATABASE_URL: 'postgres://u:p@h/db', HOST: '127.0.0.1' }).host).toBe(
+      '127.0.0.1',
+    );
+  });
+
+  it('rejects an empty HOST', () => {
+    expect(() => loadConfig({ DATABASE_URL: 'postgres://u:p@h/db', HOST: '' })).toThrow(/HOST/);
+  });
+});
+
+describe('describeBind', () => {
+  it('says all interfaces for a wildcard address', () => {
+    expect(describeBind('0.0.0.0', 8080)).toBe('listening on 0.0.0.0:8080 (all interfaces)');
+    expect(describeBind('::', 8080)).toBe('listening on [::]:8080 (all interfaces)');
+  });
+
+  it('says this machine only for a loopback address', () => {
+    expect(describeBind('127.0.0.1', 9000)).toBe('listening on 127.0.0.1:9000 (this machine only)');
+    expect(describeBind('localhost', 9000)).toBe('listening on localhost:9000 (this machine only)');
+  });
+
+  it('names the address for anything else', () => {
+    expect(describeBind('192.168.1.5', 8080)).toBe(
+      'listening on 192.168.1.5:8080 (that interface)',
+    );
   });
 });
