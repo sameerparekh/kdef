@@ -34,9 +34,12 @@ VITE_MOCK_API=true npm run dev -w web  # SPA on :5173 against in-memory MSW mock
 npm run reseed -w server           # re-read KDEF_DIR and upsert images (ids kept, nothing deleted)
 npm test                           # server feature tests (real Postgres) + web tests
 npm run lint && npm run typecheck && npm run format:check
+npm run e2e                        # Playwright smoke test against the real Docker image (see below)
 ```
 
 Mock mode (`VITE_MOCK_API=true`) is an explicit opt-in: it is never enabled automatically, and the nav shows a "Mock API" badge while it is on. The handlers in `web/src/mocks/mockApi.ts` are also what the web tests run against (MSW in Vitest).
+
+`npm run e2e` (`e2e/run.sh`) builds the image and starts it under its own compose project `kdef-e2e` (`e2e/docker-compose.e2e.yml`: app on :18080, no db port published, synthetic fixtures from `e2e/fixtures/`), runs `e2e/smoke.spec.ts` with Playwright/chromium, then always runs `compose down -v`. It does not touch a dev stack on 8080/55432. Needs `npx playwright install chromium` once.
 
 Check that Docker responds before running docker commands in an agent session. `docker info` should answer within about 2s; if Docker Desktop is wedged, docker commands hang instead of failing.
 
@@ -67,4 +70,4 @@ Each rule has a short detail file under `docs/process/`.
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint/format/TODO checks, server typecheck + tests (with a Postgres service), web tests + build, the migration immutability check and the Docker build. An aggregator job named **`CI`** is the single required check.
+`.github/workflows/ci.yml` runs lint/format/TODO checks, server typecheck + tests (with a Postgres service), web tests + build, the migration immutability check, the Docker build and the `e2e` job (`npm run e2e` with Playwright chromium; the report is uploaded on failure). An aggregator job named **`CI`** is the single required check.
