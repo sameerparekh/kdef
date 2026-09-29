@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+// Same names as EMOTIONS in shared/src/emotions.ts.
 const EMOTIONS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const SUBJECTS = [0, 1];
 const NS = [3, 7, 11];

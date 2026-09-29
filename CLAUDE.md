@@ -19,7 +19,7 @@ An adaptive quiz: a player sees a face from the KDEF dataset and picks one of 7 
 | `server/` | Node 22, Fastify 5, Kysely + `pg`. `src/app.ts` builds the app from injected deps (`db`, `clock`, `rng`). |
 | `web/` | React 18, Vite, TypeScript, Tailwind 3, @tanstack/react-query 5, react-router 7. |
 | `db/migrations/` | `V<n>__<name>.sql`, applied at boot by `server/src/db/migrate.ts`. |
-| `seed/` | `angles.csv` (`emotion,filename,angle`), a camera-angle manifest produced by `scripts/classify-angles.sh` (MediaPipe FaceMesh yaw, run in Docker). `half_left` = the face is turned toward the image's left (the nose points at the left edge); `half_right` = toward the image's right; `frontal` = smallest yaw of the three photos per subject and emotion; `unknown` = not confidently labelled. Read at first startup by `server/src/seed/`. |
+| `seed/` | `angles.csv` (`emotion,filename,angle`), a camera-angle manifest produced by `scripts/classify-angles.sh` (MediaPipe FaceMesh yaw, run in Docker). `half_left` = the face is turned toward the image's left (the nose points at the left edge); `half_right` = toward the image's right; `frontal` = the photo with the smallest |yaw| of the three per subject and emotion (and clearly near zero); `unknown` = not confidently labelled. Read at first startup by `server/src/seed/`. |
 | `docker/`, `docker-compose.yml` | Image and local stack (Postgres on host port 55432). |
 
 ## Running

@@ -20,12 +20,13 @@ negative when it sits toward the image's left edge.
 
 Labels (per (subject, emotion) group of exactly three photos)
 ------------------------------------------------------------
-  frontal     the photo with the smallest |yaw|
+  frontal     the photo with the smallest |yaw|, provided |yaw| < MAX_FRONTAL
   half_left   the face is turned toward the IMAGE's left (the nose points at the left edge)
   half_right  the face is turned toward the IMAGE's right
   unknown     anything we cannot label confidently: a group with fewer than 2 or more than 3
-              photos, 2+ failed face detections, a "turned" photo that is not clearly turned (|yaw| < MIN_TURN), or two turned
-              photos whose yaw has the same sign.
+              photos, 2+ failed face detections, no clearly frontal photo (smallest
+              |yaw| >= MAX_FRONTAL), a "turned" photo that is not clearly turned
+              (|yaw| < MIN_TURN), or two turned photos whose yaw has the same sign.
   Tolerated: a group of 2 photos is labelled from what is there; if exactly one photo of
   three fails detection and the other two are one frontal and one turned, the failed photo
   gets the opposite side (KDEF has one photo per side).
@@ -33,12 +34,25 @@ Labels (per (subject, emotion) group of exactly three photos)
 Output: seed/angles.csv with header `emotion,filename,angle`, sorted. Metadata only; no
 image is copied anywhere.
 
-Usage: classify-angles.py <kdef_dir> <out_csv> [--yaw-json <path>]
+Optional review aids (never committed, they reference KDEF images):
+  --contact-sheet [path]  write an HTML page with every group's photos and labels, for
+                          spot-checking. Without a value it goes to
+                          <system temp dir>/angles-contact-sheet.html.
+  --image-base-url <url>  where the sheet loads images from; default file://<kdef_dir>.
+                          Under Docker the dataset is mounted at /data/kdef, so pass the
+                          host path (e.g. file:///Volumes/brenn/KDEF) and mount a writable
+                          directory for the sheet.
+  --yaw-json <path>       dump raw per-photo yaw estimates (debugging).
+
+Usage: classify-angles.py <kdef_dir> <out_csv> [--contact-sheet [path]]
+       [--image-base-url url] [--yaw-json path]
 """
 
 from __future__ import annotations
 
 import argparse
+import html
+import tempfile
 import csv
 import json
 import re
@@ -49,14 +63,49 @@ from pathlib import Path
 import cv2
 import mediapipe as mp
 
+# Same names as EMOTIONS in shared/src/emotions.ts (the KDEF folder names); the server
+# validates this script's output against that list when it reads seed/angles.csv.
 EMOTIONS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 FILE_RE = re.compile(r"^(\d+)_(\d+)\.jpg$")
 
 NOSE_TIP = 1
 CHEEK_IMAGE_LEFT = 234
 CHEEK_IMAGE_RIGHT = 454
-# A non-frontal photo must be turned at least this far (in yaw units) to get a side label.
-MIN_TURN = 0.12
+# Yaw units are (d_left - d_right) / (d_left + d_right): 0 is frontal, about +-1 is a half
+# profile. On the full KDEF set the photos chosen as frontal all have |yaw| < 0.28 and every
+# turned photo has |yaw| > 0.69, so both thresholds sit in the empty gap between them.
+# The photo with the smallest |yaw| in a group is only called frontal below this.
+MAX_FRONTAL = 0.4
+# A photo must be turned at least this far to get a half_left / half_right label.
+MIN_TURN = 0.4
+
+
+DEFAULT_SHEET = Path(tempfile.gettempdir()) / "angles-contact-sheet.html"
+SHEET_ORDER = ["half_left", "frontal", "half_right", "unknown"]
+
+
+def write_contact_sheet(path: Path, rows: list[tuple[str, str, str]], base_url: str) -> None:
+    """One box per (emotion, subject); photos left to right as half_left, frontal, half_right."""
+    groups: dict[tuple[str, int], list[tuple[str, str]]] = defaultdict(list)
+    for emotion, filename, angle in rows:
+        groups[(emotion, int(filename.split("_")[0]))].append((filename, angle))
+    parts = [
+        "<!doctype html><meta charset=utf-8><title>KDEF angle labels</title>"
+        "<style>body{font:12px sans-serif}.g{display:inline-block;margin:6px;padding:4px;"
+        "border:1px solid #ccc}.g img{height:160px}.c{display:inline-block;text-align:center}"
+        "</style><h1>half_left = face turned toward the image's left</h1>"
+    ]
+    for (emotion, subject), items in sorted(groups.items()):
+        parts.append(f"<div class=g><div>{emotion} subject {subject}</div>")
+        for filename, angle in sorted(items, key=lambda x: SHEET_ORDER.index(x[1])):
+            src = html.escape(f"{base_url.rstrip('/')}/{emotion}/{filename}")
+            parts.append(
+                f'<div class=c><img loading=lazy src="{src}"><br>{html.escape(angle)}'
+                f"<br>{html.escape(filename)}</div>"
+            )
+        parts.append("</div>")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(parts))
 
 
 def estimate_yaw(face_mesh, path: Path) -> float | None:
@@ -85,6 +134,8 @@ def label_group(yaws: dict[str, float | None]) -> dict[str, str]:
         return labels
     ordered = sorted(detected, key=lambda f: abs(detected[f]))
     frontal, sides = ordered[0], ordered[1:]
+    if abs(detected[frontal]) >= MAX_FRONTAL:  # no photo is clearly frontal
+        return labels
     if any(abs(detected[f]) < MIN_TURN for f in sides):  # a "turned" photo that is not
         return labels
     if len({detected[f] > 0 for f in sides}) != len(sides):
@@ -102,6 +153,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("kdef_dir", type=Path)
     ap.add_argument("out_csv", type=Path)
+    ap.add_argument("--contact-sheet", type=Path, nargs="?", const=DEFAULT_SHEET, default=None)
+    ap.add_argument("--image-base-url", help="base URL for images in the contact sheet")
     ap.add_argument("--yaw-json", type=Path, help="also dump raw yaw per file (debugging)")
     args = ap.parse_args()
 
@@ -135,6 +188,11 @@ def main() -> int:
         w = csv.writer(fh, lineterminator="\n")
         w.writerow(["emotion", "filename", "angle"])
         w.writerows(rows)
+
+    if args.contact_sheet:
+        base = args.image_base_url or args.kdef_dir.resolve().as_uri()
+        write_contact_sheet(args.contact_sheet, rows, base)
+        print(f"contact sheet: {args.contact_sheet}")
 
     if args.yaw_json:
         dump = {f"{e}/{f}": y for (e, _s), ys in groups.items() for f, y in ys.items()}
