@@ -9,8 +9,6 @@ import type { ImagesTable } from '../db/schema.js';
 import { jpegSize } from './jpeg.js';
 import { manifestKey, readAngleManifest } from './manifest.js';
 
-export { DEFAULT_MANIFEST_PATH } from './manifest.js';
-
 /** Rows per INSERT; bounds memory (files are read per batch) and stays far below pg's 65535-parameter cap. */
 const BATCH_SIZE = 100;
 const FILE_PATTERN = /^(\d+)_(\d+)\.jpg$/;
@@ -49,6 +47,7 @@ interface DatasetFile {
 export async function ensureImagesSeeded(deps: SeedDeps): Promise<SeedResult> {
   const existing = await countImages(deps.db);
   if (existing > 0) {
+    await assertManifestSeeded(deps);
     deps.log(`seed: skipped, ${existing} images present`);
     return { status: 'skipped', existing };
   }
@@ -68,6 +67,29 @@ export async function ensureImagesSeeded(deps: SeedDeps): Promise<SeedResult> {
 export async function reseedImages(deps: SeedDeps): Promise<SeedSummary> {
   if (!deps.kdefDir) throw new Error('KDEF_DIR must be set to reseed images.');
   return loadImages(deps, deps.kdefDir, { upsert: true });
+}
+
+/**
+ * An already-seeded table must still hold every manifest image. A short table (e.g. from an
+ * incomplete listing before this check existed) fails boot instead of quizzing on a subset.
+ */
+async function assertManifestSeeded(deps: SeedDeps): Promise<void> {
+  const manifest = await readAngleManifest(deps.manifestPath);
+  const rows = await deps.db
+    .selectFrom('images')
+    .innerJoin('emotions', 'emotions.id', 'images.emotion_id')
+    .select(['emotions.name as emotion', 'images.source_file'])
+    .execute();
+  const present = new Set(rows.map((r) => manifestKey(r.emotion, r.source_file)));
+  const missing = [...manifest.keys()].filter((k) => !present.has(k));
+  if (missing.length > 0) {
+    throw new Error(
+      `seed: ${missing.length} manifest images are missing from the images table ` +
+        `(first: ${missing.slice(0, 5).join(', ')}). Run a reseed with KDEF_DIR set to add them ` +
+        '(`npm run reseed -w server`, or `docker compose exec app node server/dist/reseedCli.js`); ' +
+        'it upserts and keeps existing ids.',
+    );
+  }
 }
 
 async function countImages(db: Db): Promise<number> {
@@ -116,7 +138,9 @@ async function loadImages(
     throw new Error(
       `seed: ${noFile.length} manifest entries have no file in ${kdefDir} ` +
         `(first: ${noFile.slice(0, 5).join(', ')}). The dataset or its directory listing is ` +
-        `incomplete; refusing to seed a partial set (manifest: ${deps.manifestPath}).`,
+        `incomplete; refusing to seed a partial set (manifest: ${deps.manifestPath}). ` +
+        `Found ${files.length} files. If the folder is on a network share, retry (a restart does); ` +
+        'if a subset is intended, point SEED_MANIFEST at a manifest for it.',
     );
   }
   log(`seed: loading ${files.length} images from ${kdefDir}${opts.upsert ? ' (upsert)' : ''}`);

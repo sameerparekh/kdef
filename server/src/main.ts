@@ -16,7 +16,11 @@ async function main(): Promise<void> {
     { logLevel: config.logLevel, spa: config.spa },
   );
   app.log.info(
-    { migrationsApplied: applied, serveSpa: config.spa.enabled },
+    {
+      migrationsApplied: applied,
+      serveSpa: config.spa.enabled,
+      seedManifest: config.seedManifestPath,
+    },
     'startup: migrations done',
   );
 

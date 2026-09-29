@@ -19,9 +19,9 @@ services:
       retries: 30
 
   app:
-    # Seeding refuses a partial dataset and exits; restarting retries (e.g. after an
-    # incomplete directory listing from a network share).
-    restart: on-failure
+    # Restarts on ANY startup failure (config, migration, seeding), at most 5 times. The main
+    # case is seeding refusing an incomplete directory listing from a network share.
+    restart: on-failure:5
     build:
       context: .
       dockerfile: docker/Dockerfile
