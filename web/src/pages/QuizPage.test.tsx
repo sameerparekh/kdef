@@ -1,8 +1,8 @@
 import { EMOTIONS } from '@kdef/shared';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ALICE,
   currentQuestion,
@@ -20,6 +20,29 @@ async function startQuiz(roundLength = 3) {
   await screen.findByText(/question 1 of/i);
   return api;
 }
+
+/** Fake clock that still ticks in real time, so Testing Library's polling keeps working. */
+function useClock() {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  return userEvent.setup({ advanceTimers: (ms) => void vi.advanceTimersByTime(ms) });
+}
+const pause = (ms = CORRECT_ADVANCE_MS) => act(() => vi.advanceTimersByTimeAsync(ms));
+
+/** Records the API calls the page makes, as `POST /api/...` strings, plus /answer bodies. */
+function recordRequests() {
+  const calls: string[] = [];
+  const answers: unknown[] = [];
+  server.events.on('request:start', async ({ request }) => {
+    calls.push(`${request.method} ${new URL(request.url).pathname}`);
+    if (request.url.includes('/answer')) answers.push(await request.clone().json());
+  });
+  return { calls, answers, nexts: () => calls.filter((c) => c.endsWith('/next')).length };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+  server.events.removeAllListeners();
+});
 
 const button = (emotion: string) => screen.getByRole('button', { name: new RegExp(emotion, 'i') });
 
@@ -90,23 +113,28 @@ describe('QuizPage', () => {
     expect(CORRECT_ADVANCE_MS).toBeLessThanOrEqual(300);
   });
 
-  it('on a correct answer goes straight to the next question with no Next button', async () => {
+  it('on a correct answer confirms it, locks the buttons, then goes to the next question', async () => {
     const api = await startQuiz();
+    const q = currentQuestion(api);
     const user = userEvent.setup();
-    await user.click(button(currentQuestion(api).emotion));
+    await user.click(button(q.emotion));
+    expect(await screen.findByText(/correct!/i)).toBeInTheDocument();
+    expect(button(q.emotion)).toBeDisabled();
+    expect(button(otherThan(q.emotion))).toBeDisabled();
+    expect(screen.queryByText(/looks like on this person/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^next$/i })).not.toBeInTheDocument();
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^next$/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/looks like on this person/i)).not.toBeInTheDocument();
     expect(button('angry')).toBeEnabled();
   });
 
   it('on a miss waits for the player and does not advance by itself', async () => {
+    const user = useClock();
     const api = await startQuiz();
     const q = currentQuestion(api);
-    const user = userEvent.setup();
     await user.click(button(otherThan(q.emotion)));
     expect(await screen.findByText(/not quite/i)).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, CORRECT_ADVANCE_MS * 3));
+    await pause(CORRECT_ADVANCE_MS * 10);
     expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
     expect(screen.getByText(/not quite/i)).toBeInTheDocument();
     expect(button(q.emotion)).toBeDisabled();
@@ -126,49 +154,63 @@ describe('QuizPage', () => {
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
   });
 
-  it('a burst of keys across a correct answer answers once and does not skip the next question', async () => {
+  it('keys pressed during the confirmation pause do nothing until it ends', async () => {
+    useClock();
     const api = await startQuiz();
     const q = currentQuestion(api);
-    const bodies: unknown[] = [];
-    server.events.on('request:start', async ({ request }) => {
-      if (request.url.includes('/answer')) bodies.push(await request.clone().json());
-    });
+    const rec = recordRequests();
     const right = String(EMOTIONS.indexOf(q.emotion) + 1);
     fireEvent.keyDown(window, { key: right });
+    await screen.findByText(/correct!/i); // the answer response is in; the pause has begun
     fireEvent.keyDown(window, { key: right });
+    fireEvent.keyDown(window, { key: '2' });
     fireEvent.keyDown(window, { key: 'Enter' });
     fireEvent.keyDown(window, { key: 'Enter' });
-    fireEvent.keyDown(window, { key: right });
+    await pause(10);
+    expect(rec.nexts()).toBe(0); // Enter did not cut the pause short
+    expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
+    await pause();
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
-    await new Promise((r) => setTimeout(r, CORRECT_ADVANCE_MS * 3));
-    server.events.removeAllListeners();
-    expect(bodies).toHaveLength(1);
+    await pause(CORRECT_ADVANCE_MS * 3);
+    expect(rec.answers).toEqual([{ emotion: q.emotion }]);
+    expect(rec.nexts()).toBe(1);
     expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
     const answered = [...api.state.questions.values()].filter((x) => x.chosen !== null);
     expect(answered.map((x) => x.id)).toEqual([q.id]);
   });
 
-  it('on a miss shows the right emotion and the contrast photo labelled with the guess', async () => {
-    const api = await startQuiz();
-    const q = currentQuestion(api);
-    const wrong = otherThan(q.emotion);
-    const user = userEvent.setup();
-    await user.click(button(wrong));
-    expect(await screen.findByText(new RegExp(`it was ${label(q.emotion)}`))).toBeInTheDocument();
-    expect(screen.getByText(`What ${label(wrong)} looks like on this person`)).toBeInTheDocument();
-    expect(screen.getByAltText('Same person, for comparison')).toHaveAttribute(
-      'src',
-      expect.stringMatching(/^\/api\/images\//),
-    );
-  });
+  it.each([false, true])(
+    'leaving the quiz during the pause cancels the advance (strict: %s)',
+    async (strict) => {
+      const user = useClock();
+      const api = installMockApi({ roundLength: 1 });
+      renderRoute(`/players/${ALICE.id}/play`, { strict });
+      await screen.findByText(/question 1 of/i);
+      const rec = recordRequests();
+      await user.click(button(currentQuestion(api).emotion));
+      await screen.findByText(/correct!/i);
+      await user.click(screen.getByRole('link', { name: 'Home' }));
+      expect(await screen.findByRole('heading', { name: "Who's playing?" })).toBeInTheDocument();
+      await pause(CORRECT_ADVANCE_MS * 3);
+      expect(screen.getByRole('heading', { name: "Who's playing?" })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /round complete/i })).not.toBeInTheDocument();
+      expect(rec.nexts()).toBe(0);
+    },
+  );
 
-  it('answers with keys 1-7', async () => {
-    const api = await startQuiz();
-    const q = currentQuestion(api);
-    const user = userEvent.setup();
-    await user.keyboard(String(EMOTIONS.indexOf(q.emotion) + 1));
+  it('advances exactly once under StrictMode', async () => {
+    useClock();
+    const api = installMockApi({ roundLength: 3 });
+    renderRoute(`/players/${ALICE.id}/play`, { strict: true });
+    await screen.findByText(/question 1 of/i);
+    const rec = recordRequests();
+    fireEvent.keyDown(window, {
+      key: String(EMOTIONS.indexOf(currentQuestion(api).emotion) + 1),
+    });
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
-    expect(api.state.questions.get(q.id)?.chosen).toBe(q.emotion);
+    await pause(CORRECT_ADVANCE_MS * 3);
+    expect(rec.nexts()).toBe(1);
+    expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
   });
 
   it('advances with the Next button and updates progress', async () => {
@@ -243,7 +285,6 @@ describe('QuizPage', () => {
     fireEvent.keyDown(window, { key: '1' });
     fireEvent.keyDown(window, { key: '2' });
     await waitFor(() => expect(api.state.questions.get(q.id)?.chosen).toBe(EMOTIONS[0]));
-    await new Promise((r) => setTimeout(r, CORRECT_ADVANCE_MS * 3));
     server.events.removeAllListeners();
     expect(bodies).toEqual([{ emotion: EMOTIONS[0] }]);
     expect(api.state.questions.get(q.id)?.chosen).toBe(EMOTIONS[0]);

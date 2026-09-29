@@ -104,6 +104,8 @@ function QuestionView({
     if (!autoAdvance) return;
     const timer = setTimeout(advance, CORRECT_ADVANCE_MS);
     return () => clearTimeout(timer);
+    // Only [autoAdvance]: `advance` is deliberately left out. It closes over `result`, which cannot
+    // change once set, and QuestionView remounts per question, so the timer never sees a stale one.
   }, [autoAdvance]);
 
   useEffect(() => {
