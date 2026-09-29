@@ -380,6 +380,22 @@ describe('QuizPage', () => {
       await waitFor(() => expect(live()).toHaveTextContent('Correct.'));
     });
 
+    it('still reads the last correct answer on the summary page', async () => {
+      const api = await startQuiz(1);
+      const user = userEvent.setup();
+      await user.click(button(currentQuestion(api).emotion));
+      expect(await screen.findByRole('heading', { name: /round complete/i })).toBeInTheDocument();
+      expect(live()).toHaveTextContent('Correct.');
+    });
+
+    it('is the only place the result is announced: the banners carry no status role', async () => {
+      const api = await startQuiz();
+      const user = userEvent.setup();
+      await user.click(button(otherThan(currentQuestion(api).emotion)));
+      await screen.findByText(/not quite/i);
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
     it('clears a miss when the player moves on', async () => {
       const api = await startQuiz();
       const user = userEvent.setup();
