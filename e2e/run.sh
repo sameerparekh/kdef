@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 
 export E2E_COMPOSE_PROJECT="${E2E_COMPOSE_PROJECT:-kdef-e2e}"
 export KDEF_HOST_DIR="$PWD/e2e/fixtures/kdef"
+export E2E_COMPOSE_FILES="docker-compose.yml e2e/docker-compose.e2e.yml"
 compose=(docker compose -p "$E2E_COMPOSE_PROJECT" -f docker-compose.yml -f e2e/docker-compose.e2e.yml)
 
 cleanup() {
@@ -18,6 +19,9 @@ cleanup() {
   "${compose[@]}" down -v --remove-orphans || true
   exit "$status"
 }
+# A signal must exit non-zero so the cleanup sees a failure and dumps the logs.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 trap cleanup EXIT
 
 npm run build -w shared

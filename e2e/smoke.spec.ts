@@ -1,10 +1,17 @@
 import { execFileSync } from 'node:child_process';
-import { EMOTIONS } from '@kdef/shared';
+import { EMOTIONS, Leaderboard, PlayerList } from '@kdef/shared';
 import { expect, test, type Page } from '@playwright/test';
 
 const ROUND_LENGTH = 20;
 const PLAYER_NAME = 'Smoke Tester';
 const PROJECT = process.env.E2E_COMPOSE_PROJECT ?? 'kdef-e2e';
+/** The same -f files as e2e/run.sh, which exports E2E_COMPOSE_FILES. */
+const COMPOSE_FILES = (
+  process.env.E2E_COMPOSE_FILES ?? 'docker-compose.yml e2e/docker-compose.e2e.yml'
+)
+  .split(' ')
+  .flatMap((f) => ['-f', f]);
+const compose = (...args: string[]) => ['compose', '-p', PROJECT, ...COMPOSE_FILES, ...args];
 
 /** Every alt text on the page must be free of emotion names, or the quiz gives the answer away. */
 async function expectNoEmotionInAlt(page: Page) {
@@ -37,9 +44,7 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
   const tile = page.getByRole('link', { name: PLAYER_NAME, exact: true });
   await expect(tile).toBeVisible();
 
-  const players = (await (await request.get('/api/players')).json()) as {
-    players: { displayName: string; color: string }[];
-  };
+  const players = PlayerList.parse(await (await request.get('/api/players')).json());
   const created = players.players.find((p) => p.displayName === PLAYER_NAME);
   expect(created?.color).toMatch(/^#[0-9a-f]{6}$/i);
 
@@ -87,7 +92,10 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
     }
   }
   expect(hits + misses).toBe(ROUND_LENGTH);
-  // The cycle guarantees at most 3 hits per 7 keys' worth of one emotion each, so misses happen.
+  // The shown emotion comes from the live RNG, so a miss is probable, not guaranteed: each press
+  // hits with p of about 1/7, so P(no miss in 20) is about 1e-17. The Correct! branch is the
+  // opposite case: P(no hit in 20) is about 4.6%, so it is checked whenever it occurs but is NOT
+  // guaranteed to be covered by any single run.
   expect(misses, 'the contrast image path was never exercised').toBeGreaterThan(0);
 
   // 3. Summary, then stats with the confusion grid, then the leaderboard.
@@ -104,11 +112,24 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
 
   await page.getByRole('link', { name: 'Leaderboard' }).click();
   await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible();
-  await expect(page.getByRole('main').getByText(PLAYER_NAME).first()).toBeVisible();
+  const board = Leaderboard.parse(await (await request.get('/api/leaderboard')).json());
+  const entry = board.entries.find((e) => e.player.displayName === PLAYER_NAME);
+  expect(entry?.windowAnswered).toBe(ROUND_LENGTH);
+  if (entry?.rank === null) {
+    const needed = board.minAnswers - ROUND_LENGTH;
+    await expect(
+      page.getByRole('list', { name: 'Not yet ranked' }).getByText(PLAYER_NAME),
+    ).toBeVisible();
+    await expect(page.getByText(`needs ${needed} more answers`)).toBeVisible();
+  } else {
+    await expect(
+      page.getByRole('table', { name: 'Leaderboard' }).getByText(PLAYER_NAME),
+    ).toBeVisible();
+  }
   await expectNoEmotionInAlt(page);
 
   // 5. Restarting the app container skips seeding (the images are already in Postgres).
-  execFileSync('docker', ['compose', '-p', PROJECT, 'restart', 'app'], { stdio: 'inherit' });
+  execFileSync('docker', compose('restart', 'app'), { stdio: 'inherit' });
   await expect
     .poll(
       async () => {
@@ -121,8 +142,6 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
       { timeout: 60_000 },
     )
     .toBe(true);
-  const logs = execFileSync('docker', ['compose', '-p', PROJECT, 'logs', '--no-color', 'app'], {
-    encoding: 'utf8',
-  });
+  const logs = execFileSync('docker', compose('logs', '--no-color', 'app'), { encoding: 'utf8' });
   expect(logs).toContain('seed: skipped');
 });
