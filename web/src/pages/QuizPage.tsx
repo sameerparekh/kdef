@@ -1,11 +1,12 @@
 import { EMOTIONS, type AnswerResponse, type Emotion, type Question } from '@kdef/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Navigate, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { ApiRequestError } from '../api/client';
 import { qk, useCurrentQuestion, useSubmitAnswer } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
 import { emotionLabel } from '../lib/format';
+import type { AnnounceContext } from '../components/Layout';
 import { CORRECT_ADVANCE_MS } from '../lib/timing';
 
 /** Alt text must never reveal the emotion, so it is generic. */
@@ -46,22 +47,20 @@ function ProgressBar({
 
 function FeedbackBanner({ result }: { result: AnswerResponse }) {
   return result.correct ? (
-    <p
-      role="status"
-      className="rounded-lg bg-emerald-100 px-4 py-2 text-xl font-bold text-emerald-800"
-    >
+    <p className="rounded-lg bg-emerald-100 px-4 py-2 text-xl font-bold text-emerald-800">
       ✓ Correct!
     </p>
   ) : (
-    <p role="status" className="rounded-lg bg-red-100 px-4 py-2 text-xl font-bold text-red-800">
+    <p className="rounded-lg bg-red-100 px-4 py-2 text-xl font-bold text-red-800">
       ✗ Not quite: it was {emotionLabel(result.correctEmotion)}
     </p>
   );
 }
 
 /**
- * The words a screen reader speaks for an answer. Deliberately not the banner's wording: the
- * visible banner unmounts with its question, so this lives in a region that outlasts it.
+ * The words a screen reader speaks for an answer, in the live region owned by Layout. The wording
+ * differs from the banner's so that text queries on the banner (`/not quite/i`, `/it was X$/`)
+ * still match one element; the banner itself is not announced (it has no status role).
  */
 function announcement(result: AnswerResponse): string {
   return result.correct
@@ -214,16 +213,10 @@ export function QuizPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const current = useCurrentQuestion(roundId);
-  const [announced, setAnnounced] = useState('');
+  const { announce } = useOutletContext<AnnounceContext>();
 
   return (
     <>
-      {/* Always mounted, whatever the page below is showing: it must outlive the per-question view
-          and the loading state between questions. No role, so it does not count as a second
-          role=status next to the loading indicator. */}
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {announced}
-      </div>
       {current.isPending ? (
         <Loading label="Loading question…" />
       ) : current.isError ? (
@@ -238,7 +231,7 @@ export function QuizPage() {
           question={current.data.question}
           onNext={() => void qc.resetQueries({ queryKey: qk.next(roundId) })}
           onComplete={() => navigate(`/rounds/${roundId}/summary`)}
-          onAnnounce={setAnnounced}
+          onAnnounce={announce}
         />
       )}
     </>
