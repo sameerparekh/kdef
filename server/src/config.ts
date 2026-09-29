@@ -8,7 +8,8 @@ import { DEFAULT_MANIFEST_PATH } from './seed/manifest.js';
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url({ message: 'must be a postgres:// URL' }),
   PORT: z.coerce.number().int().min(1).max(65535).default(8080),
-  HOST: z.string().default('0.0.0.0'),
+  /** Bind address. 0.0.0.0 (default) is every interface, so other machines on the LAN can connect. */
+  HOST: z.string().min(1).default('0.0.0.0'),
   /** Directory holding the KDEF emotion folders. Needed only while the images table is empty. */
   KDEF_DIR: z.string().min(1).optional(),
   /** Camera-angle manifest, i.e. the expected image inventory. Defaults to the committed seed/angles.csv. */
@@ -57,4 +58,16 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     spa: e.SERVE_SPA === 'true' ? { enabled: true, distDir: e.WEB_DIST_DIR! } : { enabled: false },
     logLevel: e.LOG_LEVEL,
   };
+}
+
+/** One-line startup description of where the server is reachable from. */
+export function describeBind(host: string, port: number): string {
+  const shown = host.includes(':') ? `[${host}]` : host;
+  const scope =
+    host === '0.0.0.0' || host === '::'
+      ? 'all interfaces'
+      : host === 'localhost' || host === '::1' || host.startsWith('127.')
+        ? 'this machine only'
+        : 'that interface';
+  return `listening on ${shown}:${port} (${scope})`;
 }
