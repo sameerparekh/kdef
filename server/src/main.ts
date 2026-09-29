@@ -1,6 +1,6 @@
 import { buildApp } from './app.js';
 import { liveClock } from './clock.js';
-import { ConfigError, loadConfig } from './config.js';
+import { ConfigError, describeBind, loadConfig } from './config.js';
 import { connect } from './db/connect.js';
 import { migrate } from './db/migrate.js';
 import { liveRng } from './rng.js';
@@ -41,6 +41,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
 
   await app.listen({ port: config.port, host: config.host });
+  app.log.info(describeBind(config.host, config.port));
 }
 
 main().catch((err: unknown) => {
