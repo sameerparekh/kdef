@@ -9,7 +9,8 @@ services:
       POSTGRES_PASSWORD: kdef
       POSTGRES_DB: kdef
     ports:
-      - '55432:5432'
+      # Loopback only: the database has a fixed password and is for local tools and tests.
+      - '127.0.0.1:55432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

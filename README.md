@@ -16,9 +16,9 @@ Then open http://localhost:8080.
 
 ### From another device on your network
 
-The stack publishes port 8080 on all interfaces, so any device on the same network can open `http://<this-machine's-LAN-IP>:8080`. Find the IP on the host: `ipconfig getifaddr en0` on macOS (try `en1` if that prints nothing), `hostname -I` on Linux. Check it with `curl http://<ip>:8080/api/health`. The startup log shows the address the server bound inside the container, which is not the LAN IP.
+The stack publishes port 8080 on all interfaces, so any device on the same network can open `http://<this-machine's-LAN-IP>:8080`. The app has no authentication, so only run it this way on a network you trust. Find the IP on the host: `ipconfig getifaddr en0` on macOS (try `en1` if that prints nothing), `hostname -I` on Linux. Check it with `curl http://<ip>:8080/api/health`. The startup log shows the address the server bound inside the container, which is not the LAN IP.
 
-If the other device can't connect, the host firewall may be blocking the port: allow Docker (or the port) in the macOS Application Firewall, or run `sudo ufw allow 8080/tcp` on Linux. To keep the app on this machine only, set `KDEF_BIND=127.0.0.1`; `KDEF_PORT` changes the host port. The app has no authentication, so only do this on a network you trust.
+If the other device can't connect, the host firewall may be blocking the port: allow Docker (or the port) in the macOS Application Firewall, or run `sudo ufw allow 8080/tcp` on Linux. To keep the app on this machine only, set `KDEF_BIND=127.0.0.1`; `KDEF_PORT` changes the host port. Postgres (port 55432) is always published on `127.0.0.1` only.
 
 The KDEF directory must contain one folder per emotion (`angry/ disgust/ fear/ happy/ neutral/ sad/ surprise/`). It defaults to `/Volumes/brenn/KDEF`. The server loads the images into Postgres on first startup and doesn't read the directory after that.
 
