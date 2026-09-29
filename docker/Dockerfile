@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM node:22-alpine AS build
+# Debian (glibc), not Alpine: in node:22-alpine, Node's readdir/opendir returned 214 of 420
+# entries per folder for the KDEF folder on an SMB share bind-mounted through Docker Desktop
+# (BusyBox ls in the same container saw all 420; root cause not isolated), so seeding saw a
+# partial set. Node on glibc lists it fully. Bookworm is the base the fix was verified on.
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json shared/
@@ -12,7 +16,7 @@ COPY server server
 COPY web web
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json ./
