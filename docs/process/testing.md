@@ -12,7 +12,7 @@
 
 ## Web
 
-- Vitest + Testing Library + jsdom. Stub `fetch` at the boundary; don't mock the query hooks.
+- Vitest + Testing Library + jsdom. Intercept HTTP at the network boundary with the shared MSW handlers (`web/src/mocks/`), the same ones behind `VITE_MOCK_API=true`; don't mock the query hooks or `fetch` call sites.
 - Every data view has tests for the loading, error and loaded states (see `loading-states.md`).
 
 ## Fixture images
