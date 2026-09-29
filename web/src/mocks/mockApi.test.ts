@@ -1,4 +1,4 @@
-import { ApiError } from '@kdef/shared';
+import { ApiError, AnswerRequest, CreatePlayerRequest, formatZodIssues } from '@kdef/shared';
 import { describe, expect, it } from 'vitest';
 import { ALICE, installMockApi } from '../test/utils';
 
@@ -70,16 +70,20 @@ describe('mock API errors match the server', () => {
     });
   });
 
-  it('400 bad_request with "path: message" issues, as parseOr400 formats them', async () => {
+  it('400 bad_request with the same text the server builds from the shared schema issues', async () => {
     installMockApi();
-    const name = await call('POST', '/api/players', { displayName: '   ' });
-    expect(name.status).toBe(400);
-    expect(name.body?.error).toBe('bad_request');
-    expect(name.body?.message).toMatch(/^displayName: /);
-    const answer = await call('POST', `/api/questions/${MISSING}/answer`, { emotion: 'nope' });
-    expect(answer.status).toBe(400);
-    expect(answer.body?.message).toMatch(/^emotion: /);
-    const notObject = await call('POST', '/api/players', 'not an object');
-    expect(notObject.body?.message).toMatch(/^\(body\): /);
+    const bad = [
+      ['/api/players', CreatePlayerRequest, { displayName: '   ' }],
+      [`/api/questions/${MISSING}/answer`, AnswerRequest, { emotion: 'nope' }],
+      ['/api/players', CreatePlayerRequest, 'not an object'],
+    ] as const;
+    for (const [path, schema, body] of bad) {
+      const res = await call('POST', path, body);
+      const issues = schema.safeParse(body).error!.issues;
+      expect(res).toEqual({
+        status: 400,
+        body: { error: 'bad_request', message: formatZodIssues(issues) },
+      });
+    }
   });
 });
