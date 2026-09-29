@@ -1,6 +1,6 @@
 import { EMOTIONS, type AnswerResponse, type Emotion, type Question } from '@kdef/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ApiRequestError } from '../api/client';
 import { qk, useCurrentQuestion, useSubmitAnswer } from '../api/queries';
@@ -59,19 +59,42 @@ function FeedbackBanner({ result }: { result: AnswerResponse }) {
   );
 }
 
+/**
+ * The words a screen reader speaks for an answer. Deliberately not the banner's wording: the
+ * visible banner unmounts with its question, so this lives in a region that outlasts it.
+ */
+function announcement(result: AnswerResponse): string {
+  return result.correct
+    ? 'Correct.'
+    : `Incorrect. The answer was ${emotionLabel(result.correctEmotion)}.`;
+}
+
 function QuestionView({
   question,
   onNext,
   onComplete,
+  onAnnounce,
 }: {
   question: Question;
   onNext: () => void;
   onComplete: () => void;
+  onAnnounce: (text: string) => void;
 }) {
   const submit = useSubmitAnswer();
   const inFlight = useRef(false);
   const result = submit.data ?? null;
   const answering = submit.isPending;
+
+  // Clear the previous result when a question appears, so it is never read against the wrong
+  // question and an identical result next time is a change the screen reader speaks.
+  useEffect(() => {
+    onAnnounce('');
+    // Mount only: onAnnounce is a stable state setter.
+  }, []);
+  useEffect(() => {
+    if (result) onAnnounce(announcement(result));
+    // Only [result]: same stable setter.
+  }, [result]);
 
   function answer(emotion: Emotion) {
     // A ref, not render state: a second key can arrive before React re-renders.
@@ -191,25 +214,33 @@ export function QuizPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const current = useCurrentQuestion(roundId);
+  const [announced, setAnnounced] = useState('');
 
-  if (current.isPending) return <Loading label="Loading question…" />;
-  if (current.isError) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <ErrorMessage error={current.error} what="Could not load the question" />
-      </main>
-    );
-  }
-  if (current.data.status === 'complete') {
-    return <Navigate to={`/rounds/${roundId}/summary`} replace />;
-  }
-  const { question } = current.data;
   return (
-    <QuestionView
-      key={question.questionId}
-      question={question}
-      onNext={() => void qc.resetQueries({ queryKey: qk.next(roundId) })}
-      onComplete={() => navigate(`/rounds/${roundId}/summary`)}
-    />
+    <>
+      {/* Always mounted, whatever the page below is showing: it must outlive the per-question view
+          and the loading state between questions. No role, so it does not count as a second
+          role=status next to the loading indicator. */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {announced}
+      </div>
+      {current.isPending ? (
+        <Loading label="Loading question…" />
+      ) : current.isError ? (
+        <main className="mx-auto max-w-3xl p-6">
+          <ErrorMessage error={current.error} what="Could not load the question" />
+        </main>
+      ) : current.data.status === 'complete' ? (
+        <Navigate to={`/rounds/${roundId}/summary`} replace />
+      ) : (
+        <QuestionView
+          key={current.data.question.questionId}
+          question={current.data.question}
+          onNext={() => void qc.resetQueries({ queryKey: qk.next(roundId) })}
+          onComplete={() => navigate(`/rounds/${roundId}/summary`)}
+          onAnnounce={setAnnounced}
+        />
+      )}
+    </>
   );
 }

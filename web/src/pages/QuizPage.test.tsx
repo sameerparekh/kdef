@@ -353,7 +353,7 @@ describe('QuizPage', () => {
       expect(screen.queryByText('Question 1 of 3')).not.toBeInTheDocument();
       expect(screen.getByRole('status')).toHaveTextContent(/loading question/i);
       expect(live()).toBe(region);
-      expect(region).toBeConnected();
+      expect(region).toBeInTheDocument();
       expect(region).toHaveTextContent('Correct.');
     });
 
