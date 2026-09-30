@@ -396,6 +396,38 @@ describe('QuizPage', () => {
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
 
+    it('is empty again after leaving the summary for Home', async () => {
+      const api = await startQuiz(1);
+      const user = userEvent.setup();
+      await user.click(button(currentQuestion(api).emotion));
+      await screen.findByRole('heading', { name: /round complete/i });
+      expect(live()).toHaveTextContent('Correct.');
+      await user.click(screen.getByRole('link', { name: 'Home' }));
+      await screen.findByText(/who.s playing/i);
+      expect(live()).toHaveTextContent('');
+    });
+
+    it('is empty after leaving a missed question unanswered by Next', async () => {
+      const user = useClock();
+      const api = await startQuiz();
+      await user.click(button(otherThan(currentQuestion(api).emotion)));
+      await waitFor(() => expect(live()).toHaveTextContent(/incorrect/i));
+      await user.click(screen.getByRole('link', { name: 'Home' }));
+      await screen.findByText(/who.s playing/i);
+      expect(live()).toHaveTextContent('');
+    });
+
+    it('is empty after leaving during the confirmation pause', async () => {
+      const user = useClock();
+      const api = await startQuiz();
+      await user.click(button(currentQuestion(api).emotion));
+      await waitFor(() => expect(live()).toHaveTextContent('Correct.'));
+      await user.click(screen.getByRole('link', { name: 'Home' }));
+      await screen.findByText(/who.s playing/i);
+      await pause();
+      expect(live()).toHaveTextContent('');
+    });
+
     it('clears a miss when the player moves on', async () => {
       const api = await startQuiz();
       const user = userEvent.setup();
