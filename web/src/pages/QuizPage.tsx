@@ -1,13 +1,14 @@
 import { EMOTIONS, type AnswerResponse, type Emotion, type Question } from '@kdef/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { ApiRequestError } from '../api/client';
 import { qk, useCurrentQuestion, useSubmitAnswer } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
 import { emotionLabel } from '../lib/format';
 import type { AnnounceContext } from '../components/Layout';
-import { CORRECT_ADVANCE_MS } from '../lib/timing';
+import { Celebration } from '../components/Celebration';
+import { pickCelebration } from '../lib/celebration';
 
 /** Alt text must never reveal the emotion, so it is generic. */
 const FACE_ALT = 'Face to identify';
@@ -45,10 +46,14 @@ function ProgressBar({
   );
 }
 
-function FeedbackBanner({ result }: { result: AnswerResponse }) {
+/**
+ * The result line. The corner of the quiz for what follows an answer: the timer and points of a
+ * scored round can sit beside the banner in FeedbackRow. `message` is the cheerful line for a hit.
+ */
+function FeedbackBanner({ result, message }: { result: AnswerResponse; message: string }) {
   return result.correct ? (
     <p className="rounded-lg bg-emerald-100 px-4 py-2 text-xl font-bold text-emerald-800">
-      ✓ Correct!
+      <span aria-hidden="true">✓</span> <span>{message}</span>
     </p>
   ) : (
     <p className="rounded-lg bg-red-100 px-4 py-2 text-xl font-bold text-red-800">
@@ -83,6 +88,8 @@ function QuestionView({
   const inFlight = useRef(false);
   const result = submit.data ?? null;
   const answering = submit.isPending;
+  // Drawn once per question (QuestionView remounts per question, and state survives re-renders).
+  const [celebration] = useState(pickCelebration);
 
   // Clear the previous result when a question appears, so it is never read against the wrong
   // question and an identical result next time is a change the screen reader speaks.
@@ -119,23 +126,12 @@ function QuestionView({
     else onNext();
   }
 
-  // A correct answer moves on by itself after a short confirmation. The single-answer guard
-  // stays locked meanwhile (result is set), so keys pressed during the pause do nothing.
-  const autoAdvance = result?.correct === true;
-  useEffect(() => {
-    if (!autoAdvance) return;
-    const timer = setTimeout(advance, CORRECT_ADVANCE_MS);
-    return () => clearTimeout(timer);
-    // Only [autoAdvance]: `advance` is deliberately left out. It closes over `result`, which cannot
-    // change once set, and QuestionView remounts per question, so the timer never sees a stale one.
-  }, [autoAdvance]);
-
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Enter') {
         // A focused button handles Enter itself via click.
-        if (result && !result.correct && !(e.target instanceof HTMLButtonElement)) {
+        if (result && !(e.target instanceof HTMLButtonElement)) {
           e.preventDefault();
           advance();
         }
@@ -172,19 +168,18 @@ function QuestionView({
           </figure>
         ) : null}
       </div>
+      {result?.correct ? <Celebration kind={celebration.kind} /> : null}
       <div className="flex min-h-14 items-center gap-3">
         {result ? (
           <>
-            <FeedbackBanner result={result} />
-            {result.correct ? null : (
-              <button
-                type="button"
-                onClick={advance}
-                className="ml-auto rounded-lg bg-slate-900 px-6 py-3 text-lg font-semibold text-white"
-              >
-                {result.roundComplete ? 'See results' : 'Next'}
-              </button>
-            )}
+            <FeedbackBanner result={result} message={celebration.message} />
+            <button
+              type="button"
+              onClick={advance}
+              className="ml-auto rounded-lg bg-slate-900 px-6 py-3 text-lg font-semibold text-white"
+            >
+              {result.roundComplete ? 'See results' : 'Next'}
+            </button>
           </>
         ) : submit.isError ? (
           <ErrorMessage error={submit.error} what="Could not save your answer, try again" />

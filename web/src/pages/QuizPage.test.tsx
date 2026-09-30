@@ -40,10 +40,10 @@ function recordRequests() {
 }
 
 /** Makes the next celebration this kind with this message (the page draws kind, then message). */
-function pinCelebration(kind: (typeof CELEBRATIONS)[number], message = MESSAGES[0]!) {
+function pinCelebration(kind: (typeof CELEBRATIONS)[number], message: string = MESSAGES[0]) {
   const draws = [
     (CELEBRATIONS.indexOf(kind) + 0.5) / CELEBRATIONS.length,
-    (MESSAGES.indexOf(message) + 0.5) / MESSAGES.length,
+    ((MESSAGES as readonly string[]).indexOf(message) + 0.5) / MESSAGES.length,
   ];
   let i = 0;
   vi.spyOn(celebrationRandom, 'next').mockImplementation(() => draws[i++ % draws.length]!);
@@ -66,8 +66,8 @@ function setReducedMotion(reduce: boolean) {
 beforeEach(() => pinCelebration(CELEBRATIONS[0]!));
 
 afterEach(() => {
-  vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -271,7 +271,7 @@ describe('QuizPage', () => {
   });
 
   it.each([false, true])(
-    'leaving the quiz during the celebration clears its timer (strict: %s)',
+    'leaving the quiz during the celebration goes home and never advances (strict: %s)',
     async (strict) => {
       const user = useClock();
       const api = installMockApi({ roundLength: 1 });
@@ -279,15 +279,12 @@ describe('QuizPage', () => {
       await screen.findByText(/question 1 of/i);
       const rec = recordRequests();
       await user.click(button(currentQuestion(api).emotion));
-      await nextButton();
+      await screen.findByRole('button', { name: /see results/i });
       expect(celebration()).not.toBeNull();
       await user.click(screen.getByRole('link', { name: 'Home' }));
       expect(await screen.findByRole('heading', { name: "Who's playing?" })).toBeInTheDocument();
       expect(celebration()).toBeNull();
-      // No celebration timer survives the unmount.
-      const timersAfterLeaving = vi.getTimerCount();
       await pause(CELEBRATION_MS * 3);
-      expect(vi.getTimerCount()).toBeLessThanOrEqual(timersAfterLeaving);
       expect(screen.getByRole('heading', { name: "Who's playing?" })).toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: /round complete/i })).not.toBeInTheDocument();
       expect(rec.nexts()).toBe(0);
