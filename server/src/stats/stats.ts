@@ -16,11 +16,12 @@ import type { Db } from '../db/connect.js';
 import type { PlayersTable, RoundsTable } from '../db/schema.js';
 import { notFound } from '../errors.js';
 import { LEADERBOARD_MIN_ANSWERS, LEADERBOARD_WINDOW, RECENT_ROUNDS } from './config.js';
-import { accuracyOf, bestAndWorst, rankPlayers } from './ranking.js';
+import { accuracyOf, averagePointsOf, bestAndWorst, rankPlayers } from './ranking.js';
 
 /**
- * The only place answer counts and accuracies are computed. Everything is derived from
- * `questions.correct` (computed once by the answer route) and is never stored as a counter.
+ * The only place answer counts, accuracies and points totals are computed. Everything is
+ * derived from `questions.correct` and `questions.points` (both computed once by the answer
+ * route) and is never stored as a counter.
  */
 
 export function toPlayer(row: Selectable<PlayersTable>): Player {
@@ -35,6 +36,7 @@ export function toPlayer(row: Selectable<PlayersTable>): Player {
 interface Counts {
   answered: number;
   correct: number;
+  points: number;
 }
 
 const num = (v: string | number | null | undefined) => Number(v ?? 0);
@@ -49,18 +51,24 @@ async function roundCounts(db: Db, roundIds: readonly string[]): Promise<Map<str
       'round_id',
       sql<string>`count(*)`.as('answered'),
       sql<string>`count(*) filter (where correct)`.as('correct'),
+      sql<string>`coalesce(sum(points), 0)`.as('points'),
     ])
     .where('round_id', 'in', roundIds)
     .where('answered_at', 'is not', null)
     .groupBy('round_id')
     .execute();
-  for (const r of rows) out.set(r.round_id, { answered: num(r.answered), correct: num(r.correct) });
+  for (const r of rows)
+    out.set(r.round_id, {
+      answered: num(r.answered),
+      correct: num(r.correct),
+      points: num(r.points),
+    });
   return out;
 }
 
 /** Answered and correct counts for one round: the one source for /next, /answer and Round. */
 export async function roundProgress(db: Db, roundId: string): Promise<Counts> {
-  return (await roundCounts(db, [roundId])).get(roundId) ?? { answered: 0, correct: 0 };
+  return (await roundCounts(db, [roundId])).get(roundId) ?? { answered: 0, correct: 0, points: 0 };
 }
 
 /** The one completion rule: a round is done once `length` questions are answered. */
@@ -82,6 +90,7 @@ export async function toRounds(db: Db, rows: readonly Selectable<RoundsTable>[])
     endedAt: r.ended_at ? r.ended_at.toISOString() : null,
     answered: counts.get(r.id)?.answered ?? 0,
     correct: counts.get(r.id)?.correct ?? 0,
+    points: counts.get(r.id)?.points ?? 0,
   }));
 }
 
@@ -105,6 +114,11 @@ interface EmotionRow {
   emotion: Emotion;
   answered: string;
   correct: string;
+}
+
+/** A per-emotion row that also carries the summed points. */
+interface EmotionPointsRow extends EmotionRow {
+  points: string;
 }
 
 /** One tally per emotion, in EMOTIONS order, including emotions with no answers. */
@@ -156,6 +170,7 @@ export async function playerStats(db: Db, playerId: string): Promise<PlayerStats
         'e.name as emotion',
         sql<string>`count(*)`.as('answered'),
         sql<string>`count(*) filter (where q.correct)`.as('correct'),
+        sql<string>`coalesce(sum(q.points), 0)`.as('points'),
       ])
       .groupBy('e.name')
       .execute(),
@@ -183,7 +198,8 @@ export async function playerStats(db: Db, playerId: string): Promise<PlayerStats
       .execute(),
   ]);
 
-  const perEmotion = emotionTallies(emotionRows as EmotionRow[]);
+  const emotionPointRows = emotionRows as EmotionPointsRow[];
+  const perEmotion = emotionTallies(emotionPointRows);
   const angleByName = new Map(angleRows.map((r) => [r.angle, r]));
   const perAngle: AngleTally[] = ANGLES.map((angle) => {
     const a = num(angleByName.get(angle)?.answered);
@@ -200,10 +216,14 @@ export async function playerStats(db: Db, playerId: string): Promise<PlayerStats
         confusionOrder(a.chosen) - confusionOrder(b.chosen),
     );
 
+  const totalAnswered = perEmotion.reduce((n, t) => n + t.answered, 0);
+  const totalPoints = emotionPointRows.reduce((n, r) => n + num(r.points), 0);
   return {
     player: toPlayer(playerRow),
-    totalAnswered: perEmotion.reduce((n, t) => n + t.answered, 0),
+    totalAnswered,
     totalCorrect: perEmotion.reduce((n, t) => n + t.correct, 0),
+    totalPoints,
+    averagePoints: averagePointsOf(totalAnswered, totalPoints),
     perEmotion,
     perAngle,
     confusion,
@@ -214,12 +234,19 @@ export async function playerStats(db: Db, playerId: string): Promise<PlayerStats
 export async function leaderboard(db: Db): Promise<Leaderboard> {
   const players = await db.selectFrom('players').selectAll().execute();
 
-  // Accuracy over each player's last LEADERBOARD_WINDOW answers.
-  const windowRows = await sql<{ player_id: string; answered: string; correct: string }>`
-    SELECT p.id AS player_id, count(w.*) AS answered, count(w.*) FILTER (WHERE w.correct) AS correct
+  // Points and accuracy over each player's last LEADERBOARD_WINDOW answers. Reads the same
+  // partial index (player_id, answered_at DESC) as before, plus the points column from the heap.
+  const windowRows = await sql<{
+    player_id: string;
+    answered: string;
+    correct: string;
+    points: string;
+  }>`
+    SELECT p.id AS player_id, count(w.*) AS answered, count(w.*) FILTER (WHERE w.correct) AS correct,
+      coalesce(sum(w.points), 0) AS points
     FROM players p
     LEFT JOIN LATERAL (
-      SELECT q.correct FROM questions q
+      SELECT q.correct, q.points FROM questions q
       WHERE q.player_id = p.id AND q.answered_at IS NOT NULL
       ORDER BY q.answered_at DESC, q.id
       LIMIT ${LEADERBOARD_WINDOW}
@@ -264,6 +291,7 @@ export async function leaderboard(db: Db): Promise<Leaderboard> {
       createdAt: row.created_at.toISOString(),
       windowAnswered: num(w?.answered),
       windowCorrect: num(w?.correct),
+      windowPoints: num(w?.points),
       totalAnswered: emotions.reduce((n, e) => n + e.answered, 0),
       emotions,
     };
@@ -277,6 +305,7 @@ export async function leaderboard(db: Db): Promise<Leaderboard> {
       windowAnswered: item.windowAnswered,
       windowCorrect: item.windowCorrect,
       accuracy: accuracyOf(item.windowAnswered, item.windowCorrect),
+      avgPoints: averagePointsOf(item.windowAnswered, item.windowPoints),
       totalAnswered: item.totalAnswered,
       bestEmotion: best,
       worstEmotion: worst,

@@ -21,7 +21,7 @@ export function roundRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rounds/:id', async (req): Promise<RoundSummary> => {
     const { id } = parseOr400(IdParams, req.params);
     const round = await loadRound(deps.db, id);
-    return { round, perEmotion: await roundEmotionTallies(deps.db, id) };
+    return { round, points: round.points, perEmotion: await roundEmotionTallies(deps.db, id) };
   });
 
   app.post('/api/rounds/:id/next', async (req): Promise<NextResponse> => {
@@ -32,6 +32,6 @@ export function roundRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/questions/:id/answer', async (req): Promise<AnswerResponse> => {
     const { id } = parseOr400(IdParams, req.params);
     const body = parseOr400(AnswerRequest, req.body);
-    return answerQuestion(deps, id, body.emotion);
+    return answerQuestion(deps, id, body.emotion, body.clientElapsedMs);
   });
 }

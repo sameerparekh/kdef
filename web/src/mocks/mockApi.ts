@@ -33,6 +33,8 @@ import type { ZodError } from 'zod';
 /** The real server owns these numbers; the mock just needs plausible values. */
 const MOCK_WINDOW_SIZE = 200;
 const MOCK_MIN_ANSWERS = 50;
+/** The mock has no timer, so every hit scores this many points. */
+const MOCK_HIT_POINTS = 100;
 const DEFAULT_ROUND_LENGTH = 20;
 
 export interface MockOptions {
@@ -177,6 +179,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         endedAt: null,
         answered: 0,
         correct: 0,
+        points: 0,
         questionIds,
       };
       rounds.set(roundId, round);
@@ -210,6 +213,9 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       const correct = q.chosen === q.emotion;
       round.answered += 1;
       if (correct) round.correct += 1;
+      // The mock has no real timer: a hit is always worth MOCK_HIT_POINTS, a miss 0.
+      const points = correct ? MOCK_HIT_POINTS : 0;
+      round.points += points;
       const roundComplete = round.answered >= round.length;
       if (roundComplete) round.endedAt = now;
       const body: AnswerResponse = {
@@ -218,6 +224,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         chosenEmotion: q.chosen,
         contrastImageUrl: correct ? null : `/api/images/${nextId()}`,
         roundComplete,
+        points,
       };
       return HttpResponse.json(body);
     }),
@@ -226,7 +233,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       const round = rounds.get(String(params.id));
       if (!round) return notFound('Round');
       const answered = questionsOf(round).filter((q) => q.chosen !== null);
-      return HttpResponse.json({ round: publicRound(round), perEmotion: tallies(answered) });
+      return HttpResponse.json({
+        round: publicRound(round),
+        points: round.points,
+        perEmotion: tallies(answered),
+      });
     }),
 
     http.get('/api/players/:id/stats', ({ params }) => {
@@ -245,10 +256,13 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           if (count > 0) confusion.push({ actual, chosen, count });
         }
       }
+      const totalCorrect = qs.filter((q) => q.chosen === q.emotion).length;
       const stats: PlayerStats = {
         player,
         totalAnswered: qs.length,
-        totalCorrect: qs.filter((q) => q.chosen === q.emotion).length,
+        totalCorrect,
+        totalPoints: totalCorrect * MOCK_HIT_POINTS,
+        averagePoints: qs.length === 0 ? null : (totalCorrect * MOCK_HIT_POINTS) / qs.length,
         perEmotion: tallies(qs),
         perAngle,
         confusion,
@@ -282,6 +296,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         windowAnswered: s.window.length,
         windowCorrect: s.correct,
         accuracy: pct(s.correct, s.window.length),
+        avgPoints: s.window.length === 0 ? null : (s.correct * MOCK_HIT_POINTS) / s.window.length,
         totalAnswered: s.total,
         bestEmotion: s.byAcc[0]?.emotion ?? null,
         worstEmotion: s.byAcc[s.byAcc.length - 1]?.emotion ?? null,
@@ -324,6 +339,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       endedAt: now,
       answered: answers.length,
       correct: answers.filter(([a, c]) => a === c).length,
+      points: answers.filter(([a, c]) => a === c).length * MOCK_HIT_POINTS,
       questionIds,
     });
     return roundId;

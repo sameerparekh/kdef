@@ -32,6 +32,8 @@ describe('GET /api/players/:id/stats', () => {
     expect(s.player.id).toBe(p.id);
     expect(s.totalAnswered).toBe(0);
     expect(s.totalCorrect).toBe(0);
+    expect(s.totalPoints).toBe(0);
+    expect(s.averagePoints).toBeNull();
     expect(s.perEmotion.map((t) => t.emotion)).toEqual([...EMOTIONS]);
     expect(s.perAngle.map((t) => t.angle)).toEqual([...ANGLES]);
     for (const t of [...s.perEmotion, ...s.perAngle]) {
@@ -50,6 +52,9 @@ describe('GET /api/players/:id/stats', () => {
 
     expect(s.totalAnswered).toBe(47);
     expect(s.totalCorrect).toBe(27);
+    // Every answer takes 1 s (full points): 27 hits x 100, misses 0.
+    expect(s.totalPoints).toBe(2700);
+    expect(s.averagePoints).toBe(2700 / 47);
     expect(s.perEmotion.reduce((n, t) => n + t.answered, 0)).toBe(47);
     expect(s.perEmotion.reduce((n, t) => n + t.correct, 0)).toBe(27);
     expect(s.perAngle.reduce((n, t) => n + t.answered, 0)).toBe(47);
@@ -76,8 +81,8 @@ describe('GET /api/players/:id/stats', () => {
 
     // Completed rounds only, newest first, with counts from the same module as the round summary.
     expect(s.recentRounds).toHaveLength(2);
-    expect(s.recentRounds[0]).toMatchObject({ answered: 20, correct: 0 });
-    expect(s.recentRounds[1]).toMatchObject({ answered: 20, correct: 20 });
+    expect(s.recentRounds[0]).toMatchObject({ answered: 20, correct: 0, points: 0 });
+    expect(s.recentRounds[1]).toMatchObject({ answered: 20, correct: 20, points: 2000 });
     expect(new Date(s.recentRounds[0]!.startedAt).getTime()).toBeGreaterThan(
       new Date(s.recentRounds[1]!.startedAt).getTime(),
     );
@@ -123,7 +128,7 @@ describe('GET /api/leaderboard', () => {
     expect(board.minAnswers).toBe(LEADERBOARD_MIN_ANSWERS);
   });
 
-  it('ranks by accuracy over the last window of answers; unranked players follow with null rank', async () => {
+  it('ranks by average points over the last window of answers; unranked players follow with null rank', async () => {
     expect(LEADERBOARD_WINDOW).toBe(100);
     expect(LEADERBOARD_MIN_ANSWERS).toBe(40);
     const top = await createPlayer(ctx, 'Top');
@@ -157,6 +162,7 @@ describe('GET /api/leaderboard', () => {
       windowAnswered: LEADERBOARD_WINDOW,
       windowCorrect: LEADERBOARD_WINDOW,
       accuracy: 1,
+      avgPoints: 100,
       totalAnswered: LEADERBOARD_WINDOW + 20,
     });
     // Equal accuracy and equal answers share a rank; the next rank skips (competition ranking).
@@ -166,6 +172,7 @@ describe('GET /api/leaderboard', () => {
     expect(m.rank).toBe(4);
     expect(m.accuracy).toBe(m.windowCorrect / m.windowAnswered);
     expect(m.accuracy).toBeLessThan(1);
+    expect(m.avgPoints).toBe((m.windowCorrect * 100) / m.windowAnswered);
     expect(m.worstEmotion).toBe('fear');
     expect(m.bestEmotion).not.toBe('fear');
     expect(m.bestEmotion).not.toBeNull();
@@ -173,10 +180,12 @@ describe('GET /api/leaderboard', () => {
     // Unranked: fewer than minAnswers in the window. They come after ranked players.
     expect(byName.get('Few')).toMatchObject({ rank: null, windowAnswered: 3, totalAnswered: 3 });
     expect(byName.get('Few')?.accuracy).toBe(1);
+    expect(byName.get('Few')?.avgPoints).toBe(100);
     expect(byName.get('None')).toMatchObject({
       rank: null,
       windowAnswered: 0,
       accuracy: null,
+      avgPoints: null,
       bestEmotion: null,
       worstEmotion: null,
     });
@@ -191,5 +200,44 @@ describe('GET /api/leaderboard', () => {
     const e = (await getBoard()).entries.find((x) => x.player.id === p.id)!;
     expect(e.bestEmotion).toBeNull();
     expect(e.worstEmotion).toBeNull();
+  });
+});
+
+describe('GET /api/leaderboard ordering by speed', () => {
+  let ctx: TestContext;
+  beforeAll(async () => {
+    ctx = await createTestApp(11);
+    await insertPool(ctx.testDb.db);
+  });
+  afterAll(async () => ctx.close());
+
+  it('ranks speed over accuracy: fast and sloppy beats slow and perfect', async () => {
+    const fast = await createPlayer(ctx, 'Fast'); // all correct at 1 s: 100 each
+    const fastTwin = await createPlayer(ctx, 'FastTwin'); // same, so it ties with Fast
+    const fastMore = await createPlayer(ctx, 'FastMore'); // same average, more answers
+    const sloppy = await createPlayer(ctx, 'Sloppy'); // half right at 1 s: average 50
+    const slow = await createPlayer(ctx, 'Slow'); // all correct at 9 s: 25 each
+    const n = LEADERBOARD_MIN_ANSWERS;
+    await play(ctx, fast.id, n, right);
+    await play(ctx, fastTwin.id, n, right);
+    await play(ctx, fastMore.id, n + 10, right);
+    let i = 0;
+    await play(ctx, sloppy.id, n, (a) => (i++ % 2 === 0 ? a : wrong(a)));
+    await play(ctx, slow.id, n, right, 9000);
+
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/leaderboard' });
+    const board = Leaderboard.parse(res.json());
+    const mine = board.entries;
+    expect(mine.map((e) => [e.player.displayName, e.rank, e.avgPoints])).toEqual([
+      ['FastMore', 1, 100],
+      ['Fast', 2, 100],
+      ['FastTwin', 2, 100],
+      ['Sloppy', 4, 50],
+      ['Slow', 5, 25],
+    ]);
+    // Accuracy stays in the response and would have ordered Slow above Sloppy.
+    const acc = new Map(mine.map((e) => [e.player.displayName, e.accuracy]));
+    expect(acc.get('Slow')).toBe(1);
+    expect(acc.get('Sloppy')).toBe(0.5);
   });
 });

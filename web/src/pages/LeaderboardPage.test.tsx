@@ -61,7 +61,14 @@ describe('LeaderboardPage', () => {
   });
 
   it('computes answers still needed from the window count the server ranks on', async () => {
-    const base = { player: BOB, rank: null, accuracy: 0.5, bestEmotion: null, worstEmotion: null };
+    const base = {
+      player: BOB,
+      rank: null,
+      accuracy: 0.5,
+      avgPoints: 50,
+      bestEmotion: null,
+      worstEmotion: null,
+    };
     server.use(
       http.get('/api/leaderboard', () =>
         HttpResponse.json({

@@ -49,11 +49,12 @@ export async function answer(
   ctx: TestContext,
   questionId: string,
   emotion: Emotion,
+  clientElapsedMs?: number,
 ): Promise<AnswerResponse> {
   const res = await ctx.app.inject({
     method: 'POST',
     url: `/api/questions/${questionId}/answer`,
-    payload: { emotion },
+    payload: clientElapsedMs === undefined ? { emotion } : { emotion, clientElapsedMs },
   });
   if (res.statusCode !== 200) throw new Error(`answer failed: ${res.statusCode} ${res.body}`);
   return AnswerResponse.parse(res.json());
@@ -61,7 +62,7 @@ export async function answer(
 
 /**
  * Play `count` questions for a player, starting new rounds as needed, advancing the test
- * clock 1s per question. `choose` maps the actual emotion to the emotion the player picks.
+ * clock `elapsedMs` (default 1s, which scores full points) per question. `choose` maps the actual emotion to the emotion the player picks.
  * The last round may be left unfinished.
  */
 export async function play(
@@ -69,6 +70,7 @@ export async function play(
   playerId: string,
   count: number,
   choose: (actual: Emotion) => Emotion,
+  elapsedMs = 1000,
 ): Promise<void> {
   let played = 0;
   while (played < count) {
@@ -76,7 +78,7 @@ export async function play(
     for (let i = 0; i < round.length && played < count; i++) {
       const next = await nextQuestion(ctx, round.id);
       if (next.status !== 'question') throw new Error('round ended early');
-      ctx.clock.advanceMs(1000);
+      ctx.clock.advanceMs(elapsedMs);
       const actual = await actualEmotion(ctx, next.question.questionId);
       await answer(ctx, next.question.questionId, choose(actual));
       played++;
