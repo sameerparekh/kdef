@@ -69,6 +69,15 @@ describe('StatsPage', () => {
       );
     });
 
+    it('says "1 point", not "1 points", for a total of one', async () => {
+      const api = installMockApi();
+      api.seedRound(ALICE.id, [['happy', 'happy', 60_000]]); // a very slow hit: MIN_POINTS
+      renderRoute(url);
+      expect(await screen.findByText(/in total/i)).toHaveTextContent(
+        '1 point in total, 1.0 on average per answer',
+      );
+    });
+
     it('labels angles in plain words', async () => {
       seeded();
       await screen.findByRole('heading', { name: /accuracy by camera angle/i });

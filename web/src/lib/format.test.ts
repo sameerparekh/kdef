@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAvgPoints, formatPointsEarned, formatSeconds } from './format';
+import { formatAvgPoints, formatPoints, formatPointsEarned, formatSeconds } from './format';
 
 describe('formatSeconds', () => {
   it('shows seconds with one decimal', () => {
@@ -7,6 +7,15 @@ describe('formatSeconds', () => {
     expect(formatSeconds(2340)).toBe('2.3 s');
     expect(formatSeconds(2360)).toBe('2.4 s');
     expect(formatSeconds(61_000)).toBe('61.0 s');
+  });
+});
+
+describe('formatPoints', () => {
+  it('pluralises: 1 point, otherwise points', () => {
+    expect(formatPoints(1)).toBe('1 point');
+    expect(formatPoints(0)).toBe('0 points');
+    expect(formatPoints(2)).toBe('2 points');
+    expect(formatPoints(150)).toBe('150 points');
   });
 });
 

@@ -729,6 +729,47 @@ describe('timer and points', () => {
     );
   });
 
+  it('shows the result, points and Next at once even if the round total never refreshes', async () => {
+    const { user, time, api } = await startTimed();
+    await waitFor(() => expect(screen.getByText(/round total/i)).toHaveTextContent('0 points'));
+    server.use(http.get('/api/rounds/:id', () => delay('infinite')));
+    loadPhoto();
+    time.advance(5000);
+    await user.click(button(currentQuestion(api).emotion));
+    expect(await screen.findByText('+50 points')).toBeInTheDocument();
+    expect(screen.getByText(MESSAGES[0]!)).toBeInTheDocument();
+    // The total is refreshing, so it shows a dash, never the stale 0 or a made-up 50.
+    expect(screen.getByText(/round total/i)).toHaveTextContent('Round total: —');
+    await user.click(await nextButton());
+    expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
+  });
+
+  it('keeps the timer running after a failed submit and retries with the full time', async () => {
+    const { user, time, api } = await startTimed();
+    const rec = recordRequests();
+    const q = currentQuestion(api);
+    loadPhoto();
+    time.advance(2000);
+    server.use(
+      http.post(
+        '/api/questions/:id/answer',
+        () => HttpResponse.json({ error: 'internal', message: 'Could not save' }, { status: 500 }),
+        { once: true },
+      ),
+    );
+    await user.click(button(q.emotion));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    time.advance(1000);
+    expect(timer()).toHaveTextContent('3.0 s');
+    await user.click(button(q.emotion));
+    await nextButton();
+    expect(timer()).toHaveTextContent('3.0 s');
+    expect(rec.answers).toEqual([
+      { emotion: q.emotion, clientElapsedMs: 2000 },
+      { emotion: q.emotion, clientElapsedMs: 3000 },
+    ]);
+  });
+
   describe('round total', () => {
     const total = () => screen.getByText(/round total/i);
 
