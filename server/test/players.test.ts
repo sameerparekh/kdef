@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApiError, Player, PlayerList } from '@kdef/shared';
-import { PLAYER_COLORS } from '../src/players/palette.js';
+import {
+  ApiError,
+  CreatePlayerRequest,
+  PLAYER_COLORS,
+  formatZodIssues,
+  Player,
+  PlayerList,
+} from '@kdef/shared';
 import { insertPool } from './helpers/images.js';
 import { createPlayer, nextQuestion, startRound } from './helpers/quiz.js';
 import { createTestApp, type TestContext } from './helpers/testApp.js';
@@ -52,6 +58,16 @@ describe('players API', () => {
       const res = await ctx.app.inject({ method: 'POST', url: '/api/players', payload });
       expect(res.statusCode).toBe(400);
     }
+  });
+
+  it('formats 400 messages with the shared formatZodIssues', async () => {
+    const payload = { displayName: '   ', color: 'red' };
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/players', payload });
+    const issues = CreatePlayerRequest.safeParse(payload).error!.issues;
+    expect(ApiError.parse(res.json())).toEqual({
+      error: 'bad_request',
+      message: formatZodIssues(issues),
+    });
   });
 
   it('deletes a player with 204, cascading rounds and questions, and 404s afterwards', async () => {

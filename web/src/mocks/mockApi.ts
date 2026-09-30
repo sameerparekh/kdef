@@ -4,6 +4,8 @@ import {
   ApiError,
   CreatePlayerRequest,
   EMOTIONS,
+  ERROR_CODES,
+  PLAYER_COLORS,
   type Angle,
   type AngleTally,
   type AnswerResponse,
@@ -16,8 +18,11 @@ import {
   type PlayerStats,
   type Question,
   type Round,
+  formatZodIssues,
+  notFoundMessage,
 } from '@kdef/shared';
 import { http, HttpResponse, type RequestHandler } from 'msw';
+import type { ZodError } from 'zod';
 
 /**
  * In-memory stand-in for the server, shared by the Vitest suites and the `VITE_MOCK_API=true`
@@ -29,7 +34,6 @@ import { http, HttpResponse, type RequestHandler } from 'msw';
 const MOCK_WINDOW_SIZE = 200;
 const MOCK_MIN_ANSWERS = 50;
 const DEFAULT_ROUND_LENGTH = 20;
-const DEFAULT_COLORS = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2'];
 
 export interface MockOptions {
   roundLength?: number;
@@ -95,6 +99,10 @@ export function createMockApi(options: MockOptions = {}): MockApi {
 
   const error = (status: number, code: string, message: string) =>
     HttpResponse.json(ApiError.parse({ error: code, message }), { status });
+  // Codes and message builders come from @kdef/shared, which server/src/errors.ts also uses.
+  const notFound = (what: string) => error(404, ERROR_CODES.notFound, notFoundMessage(what));
+  const badRequest = (err: ZodError) =>
+    error(400, ERROR_CODES.badRequest, formatZodIssues(err.issues));
 
   const questionsOf = (round: MockRound) => round.questionIds.map((id) => questions.get(id)!);
   const playerRounds = (playerId: string) =>
@@ -120,15 +128,15 @@ export function createMockApi(options: MockOptions = {}): MockApi {
 
     http.post('/api/players', async ({ request }) => {
       const parsed = CreatePlayerRequest.safeParse(await request.json());
-      if (!parsed.success) return error(400, 'bad_request', 'Enter a name of 1-30 characters');
+      if (!parsed.success) return badRequest(parsed.error);
       const name = parsed.data.displayName;
       if (players.some((p) => p.displayName.toLowerCase() === name.toLowerCase())) {
-        return error(409, 'duplicate_name', `A player named "${name}" already exists`);
+        return error(409, ERROR_CODES.conflict, `A player named "${name}" already exists`);
       }
       const player: Player = {
         id: nextId(),
         displayName: name,
-        color: parsed.data.color ?? DEFAULT_COLORS[players.length % DEFAULT_COLORS.length]!,
+        color: parsed.data.color ?? PLAYER_COLORS[players.length % PLAYER_COLORS.length]!,
         createdAt: now,
       };
       players.push(player);
@@ -137,14 +145,14 @@ export function createMockApi(options: MockOptions = {}): MockApi {
 
     http.delete('/api/players/:id', ({ params }) => {
       const i = players.findIndex((p) => p.id === params.id);
-      if (i < 0) return error(404, 'not_found', 'No such player');
+      if (i < 0) return notFound('Player');
       players.splice(i, 1);
       return new HttpResponse(null, { status: 204 });
     }),
 
     http.post('/api/players/:id/rounds', ({ params }) => {
       const player = players.find((p) => p.id === params.id);
-      if (!player) return error(404, 'not_found', 'No such player');
+      if (!player) return notFound('Player');
       const roundId = nextId();
       const questionIds: string[] = [];
       // The mock fixes the whole round up front; the real server picks each question at /next.
@@ -177,7 +185,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
 
     http.post('/api/rounds/:id/next', ({ params }) => {
       const round = rounds.get(String(params.id));
-      if (!round) return error(404, 'not_found', 'No such round');
+      if (!round) return notFound('Round');
       const q = questionsOf(round).find((x) => x.chosen === null);
       if (!q) return HttpResponse.json({ status: 'complete' });
       const question: Question = {
@@ -192,10 +200,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     http.post('/api/questions/:id/answer', async ({ params, request }) => {
       // Like the server: validate the body (400) before looking up state (404, 409).
       const parsed = AnswerRequest.safeParse(await request.json());
-      if (!parsed.success) return error(400, 'bad_request', 'Unknown emotion');
+      if (!parsed.success) return badRequest(parsed.error);
       const q = questions.get(String(params.id));
-      if (!q) return error(404, 'not_found', 'No such question');
-      if (q.chosen !== null) return error(409, 'already_answered', 'Question already answered');
+      if (!q) return notFound('Question');
+      if (q.chosen !== null)
+        return error(409, ERROR_CODES.conflict, 'This question has already been answered');
       const round = rounds.get(q.roundId)!;
       q.chosen = parsed.data.emotion;
       const correct = q.chosen === q.emotion;
@@ -215,14 +224,14 @@ export function createMockApi(options: MockOptions = {}): MockApi {
 
     http.get('/api/rounds/:id', ({ params }) => {
       const round = rounds.get(String(params.id));
-      if (!round) return error(404, 'not_found', 'No such round');
+      if (!round) return notFound('Round');
       const answered = questionsOf(round).filter((q) => q.chosen !== null);
       return HttpResponse.json({ round: publicRound(round), perEmotion: tallies(answered) });
     }),
 
     http.get('/api/players/:id/stats', ({ params }) => {
       const player = players.find((p) => p.id === params.id);
-      if (!player) return error(404, 'not_found', 'No such player');
+      if (!player) return notFound('Player');
       const qs = answeredFor(player.id);
       const perAngle: AngleTally[] = ANGLES.map((angle) => {
         const mine = qs.filter((q) => q.angle === angle);

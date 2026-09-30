@@ -1,12 +1,12 @@
-import { CreatePlayerRequest, type Player } from '@kdef/shared';
+import { CreatePlayerRequest, PLAYER_COLORS, type Player } from '@kdef/shared';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useCreatePlayer, useDeletePlayer, usePlayers } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
 import { clearLastPlayerId, setLastPlayerId } from '../lib/lastPlayer';
 
-/** Offered swatches; leaving it unset lets the server choose. */
-const SWATCHES = ['#e11d48', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed'];
+/** Offered swatches (the shared palette); leaving it unset lets the server choose. */
+const SWATCHES = PLAYER_COLORS;
 
 function PlayerTile({ player }: { player: Player }) {
   const [confirming, setConfirming] = useState(false);

@@ -22,6 +22,7 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: .github/scripts/check-todos.sh
+      - run: shellcheck scripts/*.sh e2e/run.sh
 
   server:
     name: Server typecheck & tests
