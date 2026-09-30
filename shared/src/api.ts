@@ -52,6 +52,8 @@ export const Round = z.object({
   endedAt: IsoDateTime.nullable(),
   answered: z.number().int().nonnegative(),
   correct: z.number().int().nonnegative(),
+  /** Total speed-scoring points earned in this round so far. */
+  points: z.number().int().nonnegative(),
 });
 export type Round = z.infer<typeof Round>;
 
@@ -75,7 +77,15 @@ export const NextResponse = z.discriminatedUnion('status', [
 ]);
 export type NextResponse = z.infer<typeof NextResponse>;
 
-export const AnswerRequest = z.object({ emotion: Emotion });
+export const AnswerRequest = z.object({
+  emotion: Emotion,
+  /**
+   * Milliseconds from the photo finishing loading to the answer, as the client measured it.
+   * Optional. The server scores on the smaller of this and its own measurement, so a larger
+   * value is ignored; a negative value is ignored too.
+   */
+  clientElapsedMs: z.number().finite().optional(),
+});
 export type AnswerRequest = z.infer<typeof AnswerRequest>;
 
 export const AnswerResponse = z.object({
@@ -85,6 +95,8 @@ export const AnswerResponse = z.object({
   /** On a miss: the same person showing the emotion that was guessed. Null when correct. */
   contrastImageUrl: z.string().nullable(),
   roundComplete: z.boolean(),
+  /** Speed-scoring points this answer earned: 0 for a miss, at least 1 for a hit. */
+  points: z.number().int().nonnegative(),
 });
 export type AnswerResponse = z.infer<typeof AnswerResponse>;
 
@@ -96,7 +108,12 @@ export const EmotionTally = z.object({
 });
 export type EmotionTally = z.infer<typeof EmotionTally>;
 
-export const RoundSummary = z.object({ round: Round, perEmotion: z.array(EmotionTally) });
+export const RoundSummary = z.object({
+  round: Round,
+  /** The round's total points; equal to `round.points`. */
+  points: z.number().int().nonnegative(),
+  perEmotion: z.array(EmotionTally),
+});
 export type RoundSummary = z.infer<typeof RoundSummary>;
 
 // ---- stats & leaderboard ----
@@ -120,6 +137,10 @@ export const PlayerStats = z.object({
   player: Player,
   totalAnswered: z.number().int().nonnegative(),
   totalCorrect: z.number().int().nonnegative(),
+  /** Points over all answers. */
+  totalPoints: z.number().int().nonnegative(),
+  /** Points per answer over all answers (misses count 0), or null with no answers. */
+  averagePoints: z.number().nonnegative().nullable(),
   perEmotion: z.array(EmotionTally),
   perAngle: z.array(AngleTally),
   /** Sparse: only cells with count > 0. */
@@ -136,6 +157,8 @@ export const LeaderboardEntry = z.object({
   windowAnswered: z.number().int().nonnegative(),
   windowCorrect: z.number().int().nonnegative(),
   accuracy: Accuracy,
+  /** Points per answer over the window (misses count 0), or null with no answers. Ranking uses this. */
+  avgPoints: z.number().nonnegative().nullable(),
   totalAnswered: z.number().int().nonnegative(),
   bestEmotion: Emotion.nullable(),
   worstEmotion: Emotion.nullable(),
@@ -143,7 +166,7 @@ export const LeaderboardEntry = z.object({
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntry>;
 
 export const Leaderboard = z.object({
-  /** Accuracy is computed over each player's last `windowSize` answers. */
+  /** Average points and accuracy are computed over each player's last `windowSize` answers. */
   windowSize: z.number().int().positive(),
   /** Minimum answers before a player is ranked. */
   minAnswers: z.number().int().positive(),

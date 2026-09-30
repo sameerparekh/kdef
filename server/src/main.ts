@@ -4,6 +4,7 @@ import { ConfigError, describeBind, loadConfig } from './config.js';
 import { connect } from './db/connect.js';
 import { migrate } from './db/migrate.js';
 import { liveRng } from './rng.js';
+import { backfillPoints } from './scoring/backfill.js';
 import { ensureImagesSeeded } from './seed/index.js';
 
 async function main(): Promise<void> {
@@ -11,6 +12,7 @@ async function main(): Promise<void> {
   const { applied } = await migrate(config.databaseUrl);
 
   const db = connect(config.databaseUrl);
+  const backfilled = await backfillPoints(db);
   const app = await buildApp(
     { db, clock: liveClock, rng: liveRng },
     { logLevel: config.logLevel, spa: config.spa },
@@ -18,6 +20,7 @@ async function main(): Promise<void> {
   app.log.info(
     {
       migrationsApplied: applied,
+      pointsBackfilled: backfilled,
       serveSpa: config.spa.enabled,
       seedManifest: config.seedManifestPath,
     },

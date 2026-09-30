@@ -194,8 +194,25 @@ describe('GET /api/leaderboard', () => {
     void none;
   });
 
+  it('leaves best and worst emotion null when no emotion has enough answers', async () => {
+    const p = await createPlayer(ctx, 'Sparse');
+    await play(ctx, p.id, LEADERBOARD_EMOTION_MIN_ANSWERS - 1, right);
+    const e = (await getBoard()).entries.find((x) => x.player.id === p.id)!;
+    expect(e.bestEmotion).toBeNull();
+    expect(e.worstEmotion).toBeNull();
+  });
+});
+
+describe('GET /api/leaderboard ordering by speed', () => {
+  let ctx: TestContext;
+  beforeAll(async () => {
+    ctx = await createTestApp(11);
+    await insertPool(ctx.testDb.db);
+  });
+  afterAll(async () => ctx.close());
+
   it('ranks speed over accuracy: fast and sloppy beats slow and perfect', async () => {
-    const tag = (n: string) => `${n} speed`;
+    const tag = (n: string) => n;
     const fast = await createPlayer(ctx, tag('Fast')); // all correct at 1 s: 100 each
     const fastTwin = await createPlayer(ctx, tag('FastTwin')); // same, so it ties with Fast
     const fastMore = await createPlayer(ctx, tag('FastMore')); // same average, more answers
@@ -209,26 +226,19 @@ describe('GET /api/leaderboard', () => {
     await play(ctx, sloppy.id, n, (a) => (i++ % 2 === 0 ? a : wrong(a)));
     await play(ctx, slow.id, n, right, 9000);
 
-    const board = await getBoard();
-    const mine = board.entries.filter((e) => e.player.displayName.endsWith(' speed'));
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/leaderboard' });
+    const board = Leaderboard.parse(res.json());
+    const mine = board.entries;
     expect(mine.map((e) => [e.player.displayName, e.rank, e.avgPoints])).toEqual([
-      ['FastMore speed', 1, 100],
-      ['Fast speed', 2, 100],
-      ['FastTwin speed', 2, 100],
-      ['Sloppy speed', 4, 50],
-      ['Slow speed', 5, 25],
+      ['FastMore', 1, 100],
+      ['Fast', 2, 100],
+      ['FastTwin', 2, 100],
+      ['Sloppy', 4, 50],
+      ['Slow', 5, 25],
     ]);
     // Accuracy stays in the response and would have ordered Slow above Sloppy.
     const acc = new Map(mine.map((e) => [e.player.displayName, e.accuracy]));
-    expect(acc.get('Slow speed')).toBe(1);
-    expect(acc.get('Sloppy speed')).toBe(0.5);
-  });
-
-  it('leaves best and worst emotion null when no emotion has enough answers', async () => {
-    const p = await createPlayer(ctx, 'Sparse');
-    await play(ctx, p.id, LEADERBOARD_EMOTION_MIN_ANSWERS - 1, right);
-    const e = (await getBoard()).entries.find((x) => x.player.id === p.id)!;
-    expect(e.bestEmotion).toBeNull();
-    expect(e.worstEmotion).toBeNull();
+    expect(acc.get('Slow')).toBe(1);
+    expect(acc.get('Sloppy')).toBe(0.5);
   });
 });

@@ -22,6 +22,7 @@ import {
 import type { AppDeps } from '../app.js';
 import type { Db } from '../db/connect.js';
 import { HttpError, conflict, notFound } from '../errors.js';
+import { effectiveElapsedMs, pointsFor } from '../scoring/points.js';
 import { isRoundComplete, roundProgress, toRound } from '../stats/stats.js';
 import { ROUND_LENGTH } from './config.js';
 
@@ -183,6 +184,7 @@ export async function answerQuestion(
   { db, clock, rng }: AppDeps,
   questionId: string,
   chosen: Emotion,
+  clientElapsedMs?: number,
 ): Promise<AnswerResponse> {
   return db.transaction().execute(async (trx): Promise<AnswerResponse> => {
     // Lock order is round, then question, matching nextQuestion (which locks the round and
@@ -223,13 +225,21 @@ export async function answerQuestion(
     // The one place correctness is decided; it is stored and never re-derived.
     const correct = shown.name === chosen;
     const now = clock.now();
+    // response_ms holds the time the answer is scored on (see scoring/points.ts), and points
+    // are computed here once and stored; nothing else derives them.
+    const responseMs = effectiveElapsedMs(
+      Math.max(0, now.getTime() - q.asked_at.getTime()),
+      clientElapsedMs,
+    );
+    const points = pointsFor(correct, responseMs);
     await trx
       .updateTable('questions')
       .set({
         answered_at: now,
         chosen_emotion_id: chosenRow.id,
         correct,
-        response_ms: Math.max(0, now.getTime() - q.asked_at.getTime()),
+        response_ms: responseMs,
+        points,
       })
       .where('id', '=', questionId)
       .execute();
@@ -264,6 +274,7 @@ export async function answerQuestion(
       chosenEmotion: chosen,
       contrastImageUrl,
       roundComplete,
+      points,
     };
   });
 }
