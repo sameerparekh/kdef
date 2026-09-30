@@ -11,6 +11,7 @@ describe('StatsPage', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.queryByText(/no answers yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    expect(screen.queryByText(/points/i)).not.toBeInTheDocument();
   });
 
   it('shows the server error', async () => {
@@ -51,6 +52,30 @@ describe('StatsPage', () => {
       expect(
         within(within(table).getByRole('row', { name: /fear/i })).getByText('not asked'),
       ).toBeInTheDocument();
+    });
+
+    it('shows total and average points', async () => {
+      const api = installMockApi();
+      // 100 + 0 + 50 + 0 = 150 points over 4 answers
+      api.seedRound(ALICE.id, [
+        ['happy', 'happy'],
+        ['happy', 'sad'],
+        ['sad', 'sad', 5000],
+        ['fear', 'angry'],
+      ]);
+      renderRoute(url);
+      expect(await screen.findByText(/points in total/i)).toHaveTextContent(
+        '150 points in total, 37.5 on average per answer',
+      );
+    });
+
+    it('says "1 point", not "1 points", for a total of one', async () => {
+      const api = installMockApi();
+      api.seedRound(ALICE.id, [['happy', 'happy', 60_000]]); // a very slow hit: MIN_POINTS
+      renderRoute(url);
+      expect(await screen.findByText(/in total/i)).toHaveTextContent(
+        '1 point in total, 1.0 on average per answer',
+      );
     });
 
     it('labels angles in plain words', async () => {

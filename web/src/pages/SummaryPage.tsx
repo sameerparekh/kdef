@@ -24,6 +24,9 @@ export function SummaryPage() {
       <p className="mt-2 text-6xl font-bold tabular-nums" aria-label="Score">
         {round.correct} / {round.answered}
       </p>
+      <p className="mt-2 text-2xl font-semibold">
+        Total points: <span className="tabular-nums">{summary.data.points}</span>
+      </p>
       <table className="mt-6 w-full text-left text-lg">
         <caption className="sr-only">Score by emotion</caption>
         <thead>

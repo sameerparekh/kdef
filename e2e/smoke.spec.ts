@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { AnswerResponse, EMOTIONS, Leaderboard, PlayerList } from '@kdef/shared';
 import { expect, test, type Page } from '@playwright/test';
 import { MESSAGES } from '../web/src/lib/celebration.js';
+import { formatAvgPoints, formatPoints, formatPointsEarned } from '../web/src/lib/format.js';
 
 const ROUND_LENGTH = 20;
 const PLAYER_NAME = 'Smoke Tester';
@@ -63,6 +64,7 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
 
   let misses = 0;
   let hits = 0;
+  let roundPoints = 0;
   let reloaded = false;
   for (let q = 1; q <= ROUND_LENGTH; q++) {
     await expect(page.getByText(`Question ${q} of ${ROUND_LENGTH}`)).toBeVisible();
@@ -82,6 +84,14 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
     const answered = page.waitForResponse((r) => /\/api\/questions\/[^/]+\/answer$/.test(r.url()));
     await page.keyboard.press(String((q % EMOTIONS.length) + 1));
     const result = AnswerResponse.parse(await (await answered).json());
+    roundPoints += result.points;
+    // Hits and misses both show the points the server awarded: a hit is at least 1, a miss 0.
+    expect(result.points).toBeGreaterThanOrEqual(result.correct ? 1 : 0);
+    if (!result.correct) expect(result.points).toBe(0);
+    await expect(page.getByText(formatPointsEarned(result.points), { exact: true })).toBeVisible();
+    await expect(page.getByText(/^Round total: /)).toHaveText(
+      `Round total: ${formatPoints(roundPoints)}`,
+    );
 
     // Both outcomes stop and wait for Next / See results / Enter.
     const wrong = page.getByText(/Not quite/);
@@ -128,10 +138,16 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
   // 3. Summary, then stats with the confusion grid, then the leaderboard.
   await expect(page.getByRole('heading', { name: 'Round complete' })).toBeVisible();
   await expect(page.getByLabel('Score')).toHaveText(`${hits} / ${ROUND_LENGTH}`);
+  await expect(page.getByText(/^Total points: /)).toHaveText(`Total points: ${roundPoints}`);
 
   await page.getByRole('link', { name: 'View stats' }).click();
   await expect(page.getByRole('heading', { name: `${PLAYER_NAME}'s stats` })).toBeVisible();
   await expect(page.getByText(`${hits} correct out of ${ROUND_LENGTH} answers`)).toBeVisible();
+  await expect(
+    page.getByText(
+      `${formatPoints(roundPoints)} in total, ${formatAvgPoints(roundPoints / ROUND_LENGTH)} on average per answer`,
+    ),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Confusion matrix' })).toBeVisible();
   await expect(page.getByRole('cell', { name: /^Actual .*, chosen .*: \d+$/ })).toHaveCount(
     EMOTIONS.length * EMOTIONS.length,
@@ -142,6 +158,7 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
   const board = Leaderboard.parse(await (await request.get('/api/leaderboard')).json());
   const entry = board.entries.find((e) => e.player.displayName === PLAYER_NAME);
   expect(entry?.windowAnswered).toBe(ROUND_LENGTH);
+  expect(entry?.avgPoints).toBeCloseTo(roundPoints / ROUND_LENGTH, 5);
   // One round is below the ranking threshold, so the player must be listed as unranked.
   expect(ROUND_LENGTH).toBeLessThan(board.minAnswers);
   expect(entry?.rank).toBeNull();

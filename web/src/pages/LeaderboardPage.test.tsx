@@ -5,11 +5,24 @@ import { server } from '../test/server';
 import { describe, expect, it } from 'vitest';
 import { ALICE, BOB, fail, hang, renderRoute, installMockApi } from '../test/utils';
 
-/** 60 answers, 45 right: 75%. happy is always right, sad always wrong. */
-function aliceAnswers(): Array<[Emotion, Emotion]> {
-  const out: Array<[Emotion, Emotion]> = [];
-  for (let i = 0; i < 45; i++) out.push(['happy', 'happy']);
+type Answer = [Emotion, Emotion, number?];
+
+/**
+ * 60 answers, 45 right: 75%. happy is always right (at 5 s: 50 points each), sad always wrong,
+ * so the average is 45 * 50 / 60 = 37.5 points.
+ */
+function aliceAnswers(): Answer[] {
+  const out: Answer[] = [];
+  for (let i = 0; i < 45; i++) out.push(['happy', 'happy', 5000]);
   for (let i = 0; i < 15; i++) out.push(['sad', 'angry']);
+  return out;
+}
+
+/** 60 answers, 30 right and instant (100 points each): 50%, but 50 points on average. */
+function bobFastAnswers(): Answer[] {
+  const out: Answer[] = [];
+  for (let i = 0; i < 30; i++) out.push(['happy', 'happy']);
+  for (let i = 0; i < 30; i++) out.push(['sad', 'angry']);
   return out;
 }
 
@@ -40,7 +53,9 @@ describe('LeaderboardPage', () => {
     const cells = within(row)
       .getAllByRole('cell')
       .map((c) => c.textContent);
-    expect(cells).toEqual(['1', 'Alice', '75%', '60', 'Happy', 'Sad']);
+    expect(cells).toEqual(['1', 'Alice', '37.5', '75%', '60', 'Happy', 'Sad']);
+    expect(screen.getByRole('columnheader', { name: /avg points/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /accuracy/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /answers in window/i })).toBeInTheDocument();
     expect(within(table).queryByText('Bob')).not.toBeInTheDocument();
 
@@ -50,7 +65,26 @@ describe('LeaderboardPage', () => {
     expect(within(unranked).getByText(/needs 48 more answers/i)).toBeInTheDocument();
 
     expect(screen.getByText(/last 200 answers/i)).toBeInTheDocument();
+    expect(screen.getByText(/ranked by average points/i)).toBeInTheDocument();
     expect(screen.getByText(/weakest emotions/i)).toBeInTheDocument();
+  });
+
+  it('ranks by average points, not accuracy', async () => {
+    const api = installMockApi();
+    api.seedRound(ALICE.id, aliceAnswers()); // 75% accurate, 37.5 points
+    api.seedRound(BOB.id, bobFastAnswers()); // 50% accurate, 50 points
+    renderRoute('/leaderboard');
+    const table = await screen.findByRole('table', { name: /leaderboard/i });
+    const rows = within(table).getAllByRole('row').slice(1);
+    const cells = rows.map((r) =>
+      within(r)
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    );
+    expect(cells.map((c) => c.slice(0, 4))).toEqual([
+      ['1', 'Bob', '50.0', '50%'],
+      ['2', 'Alice', '37.5', '75%'],
+    ]);
   });
 
   it('shows only the unranked list when nobody has enough answers yet', async () => {

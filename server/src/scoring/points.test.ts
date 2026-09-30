@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { GRACE_MS, HALF_LIFE_MS, LOAD_ALLOWANCE_MS, MAX_POINTS, MIN_POINTS } from './config.js';
-import { effectiveElapsedMs, pointsFor } from './points.js';
+import {
+  GRACE_MS,
+  HALF_LIFE_MS,
+  LOAD_ALLOWANCE_MS,
+  MAX_POINTS,
+  MIN_POINTS,
+  effectiveElapsedMs,
+  pointsFor,
+} from '@kdef/shared';
 
 describe('scoring constants', () => {
   it('start at the values the issue specifies', () => {

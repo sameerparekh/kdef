@@ -1,13 +1,21 @@
-import { EMOTIONS, type AnswerResponse, type Emotion, type Question } from '@kdef/shared';
+import {
+  EMOTIONS,
+  MAX_CLIENT_ELAPSED_MS,
+  type AnswerResponse,
+  type Emotion,
+  type Question,
+} from '@kdef/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { ApiRequestError } from '../api/client';
-import { qk, useCurrentQuestion, useSubmitAnswer } from '../api/queries';
+import { qk, useCurrentQuestion, useRoundSummary, useSubmitAnswer } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
-import { emotionLabel } from '../lib/format';
+import { clock } from '../lib/clock';
+import { emotionLabel, formatPoints, formatPointsEarned } from '../lib/format';
 import type { AnnounceContext } from '../components/Layout';
 import { Celebration } from '../components/Celebration';
+import { QuestionTimer } from '../components/QuestionTimer';
 import { pickCelebration } from '../lib/celebration';
 
 /** Alt text must never reveal the emotion, so it is generic. */
@@ -46,6 +54,33 @@ function ProgressBar({
   );
 }
 
+/**
+ * The running round total, as the server reports it (GET /api/rounds/:id). It is refetched after
+ * each answer and survives a reload; the client never adds up points itself.
+ */
+function RoundTotal({ roundId }: { roundId: string }) {
+  const summary = useRoundSummary(roundId);
+  return (
+    <p className="text-sm font-medium text-slate-600">
+      Round total:{' '}
+      {summary.isPending ? (
+        <span role="status" aria-label="Loading round total">
+          —
+        </span>
+      ) : summary.isFetching ? (
+        // Refreshing after an answer: no number rather than a stale one.
+        <span aria-label="Updating round total">—</span>
+      ) : summary.isError ? (
+        <span>unavailable</span>
+      ) : (
+        <span className="font-semibold tabular-nums text-slate-900">
+          {formatPoints(summary.data.points)}
+        </span>
+      )}
+    </p>
+  );
+}
+
 /** The result line: the cheerful `message` after a hit, the right answer after a miss. */
 function FeedbackBanner({ result, message }: { result: AnswerResponse; message: string }) {
   return result.correct ? (
@@ -65,17 +100,20 @@ function FeedbackBanner({ result, message }: { result: AnswerResponse; message: 
  * still match one element; the banner itself is not announced (it has no status role).
  */
 function announcement(result: AnswerResponse): string {
+  const points = formatPoints(result.points);
   return result.correct
-    ? 'Correct.'
-    : `Incorrect. The answer was ${emotionLabel(result.correctEmotion)}.`;
+    ? `Correct. ${points}.`
+    : `Incorrect. The answer was ${emotionLabel(result.correctEmotion)}. ${points}.`;
 }
 
 function QuestionView({
+  roundId,
   question,
   onNext,
   onComplete,
   onAnnounce,
 }: {
+  roundId: string;
   question: Question;
   onNext: () => void;
   onComplete: () => void;
@@ -88,6 +126,17 @@ function QuestionView({
   const answering = submit.isPending;
   // Drawn once per question (QuestionView remounts per question, and state survives re-renders).
   const [celebration] = useState(pickCelebration);
+  // When the photo finished loading, on the timer clock. State drives the display; the ref is what
+  // answer() reads, since a key can arrive before React re-renders after the load.
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const loadedAtRef = useRef<number | null>(null);
+  const [stoppedMs, setStoppedMs] = useState<number | null>(null);
+
+  function onPhotoLoad() {
+    if (loadedAtRef.current !== null) return;
+    loadedAtRef.current = clock.now();
+    setLoadedAt(loadedAtRef.current);
+  }
 
   // Clear the previous result when a question appears, so it is never read against the wrong
   // question and an identical result next time is a change the screen reader speaks.
@@ -104,8 +153,14 @@ function QuestionView({
     // A ref, not render state: a second key can arrive before React re-renders.
     if (result || inFlight.current) return;
     inFlight.current = true;
+    // Whole ms since the photo loaded, never above what the server accepts; none if it never did.
+    const elapsed =
+      loadedAtRef.current === null ? null : Math.max(0, clock.now() - loadedAtRef.current);
+    const clientElapsedMs =
+      elapsed === null ? undefined : Math.min(MAX_CLIENT_ELAPSED_MS, Math.round(elapsed));
+    setStoppedMs(elapsed);
     submit.mutate(
-      { questionId: question.questionId, emotion },
+      { questionId: question.questionId, roundId, emotion, clientElapsedMs },
       {
         onError: (err) => {
           if (err instanceof ApiRequestError && err.status === 409) {
@@ -113,6 +168,7 @@ function QuestionView({
             onNext();
           } else {
             inFlight.current = false;
+            setStoppedMs(null); // the question is still open, so the timer runs on
           }
         },
       },
@@ -147,12 +203,21 @@ function QuestionView({
 
   return (
     <main className="mx-auto flex h-[calc(100dvh-3.5rem)] max-w-5xl flex-col gap-2 p-3">
-      <ProgressBar position={question.position} total={question.total} done={result !== null} />
+      <div className="flex items-end gap-4">
+        <div className="flex-1">
+          <ProgressBar position={question.position} total={question.total} done={result !== null} />
+        </div>
+        <div className="text-right">
+          <QuestionTimer loadedAt={loadedAt} stoppedMs={stoppedMs} />
+          <RoundTotal roundId={roundId} />
+        </div>
+      </div>
       <div className="flex min-h-0 flex-1 items-center justify-center gap-4">
         <img
           src={question.imageUrl}
           alt={FACE_ALT}
           style={{ aspectRatio: '562 / 762' }}
+          onLoad={onPhotoLoad}
           className="h-full max-h-full min-h-0 rounded-xl object-cover shadow"
         />
         {result && !result.correct && result.contrastImageUrl ? (
@@ -174,6 +239,9 @@ function QuestionView({
         {result ? (
           <>
             <FeedbackBanner result={result} message={celebration.message} />
+            <p className="text-xl font-bold tabular-nums text-slate-800">
+              {formatPointsEarned(result.points)}
+            </p>
             <button
               type="button"
               onClick={advance}
@@ -224,6 +292,7 @@ export function QuizPage() {
       ) : (
         <QuestionView
           key={current.data.question.questionId}
+          roundId={roundId}
           question={current.data.question}
           onNext={() => void qc.resetQueries({ queryKey: qk.next(roundId) })}
           onComplete={() => navigate(`/rounds/${roundId}/summary`)}

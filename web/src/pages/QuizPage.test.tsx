@@ -1,4 +1,4 @@
-import { EMOTIONS } from '@kdef/shared';
+import { EMOTIONS, MAX_CLIENT_ELAPSED_MS } from '@kdef/shared';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import userEvent from '@testing-library/user-event';
@@ -10,8 +10,11 @@ import {
   otherThan,
   renderRoute,
   installMockApi,
+  hang,
+  fail,
 } from '../test/utils';
 import { server } from '../test/server';
+import { clock } from '../lib/clock';
 import { CELEBRATION_MS, CELEBRATIONS, MESSAGES, celebrationRandom } from '../lib/celebration';
 
 async function startQuiz(roundLength = 3) {
@@ -550,6 +553,290 @@ describe('QuizPage', () => {
       await user.click(await screen.findByRole('button', { name: /^next$/i }));
       await screen.findByText('Question 2 of 3');
       expect(live()).toHaveTextContent('');
+    });
+  });
+});
+
+describe('timer and points', () => {
+  /** A controllable clock for both the page timer and the mock server, on top of fake timers. */
+  function controlledTime() {
+    let t = 10_000;
+    vi.spyOn(clock, 'now').mockImplementation(() => t);
+    return {
+      now: () => t,
+      /** Move the clock forward and let the timer's interval fire. */
+      advance(ms: number) {
+        t += ms;
+        act(() => vi.advanceTimersByTime(ms));
+      },
+    };
+  }
+  async function startTimed(roundLength = 3) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: (ms) => void vi.advanceTimersByTime(ms) });
+    const time = controlledTime();
+    const api = installMockApi({ roundLength, clock: time.now });
+    renderRoute(`/players/${ALICE.id}/play`);
+    await screen.findByText(/question 1 of/i);
+    return { user, time, api };
+  }
+  const photo = () => screen.getByAltText('Face to identify');
+  const loadPhoto = () => fireEvent.load(photo());
+  const timer = () => screen.getByRole('timer');
+
+  it('shows no time, and does not count, until the photo has loaded', async () => {
+    const { time } = await startTimed();
+    expect(timer()).toHaveTextContent('—');
+    time.advance(5000);
+    expect(timer()).toHaveTextContent('—');
+    expect(timer()).not.toHaveTextContent('0.0');
+  });
+
+  it('starts counting up when the photo finishes loading, with one decimal', async () => {
+    const { time } = await startTimed();
+    time.advance(3000); // the photo is slow: this time is not the player's
+    loadPhoto();
+    expect(timer()).toHaveTextContent('0.0 s');
+    time.advance(2500);
+    expect(timer()).toHaveTextContent('2.5 s');
+    time.advance(100);
+    expect(timer()).toHaveTextContent('2.6 s');
+  });
+
+  it('updates about ten times a second, not on every frame', async () => {
+    const { time } = await startTimed();
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    loadPhoto();
+    const delays = setIntervalSpy.mock.calls.map((c) => c[1]);
+    expect(delays).toContain(100);
+    expect(delays.every((d) => d === undefined || d >= 100)).toBe(true);
+    time.advance(1000);
+    expect(timer()).toHaveTextContent('1.0 s');
+  });
+
+  it('stops when the player answers and keeps the time at the answer', async () => {
+    const { user, time, api } = await startTimed();
+    loadPhoto();
+    time.advance(2300);
+    await user.click(button(currentQuestion(api).emotion));
+    await nextButton();
+    expect(timer()).toHaveTextContent('2.3 s');
+    time.advance(5000);
+    expect(timer()).toHaveTextContent('2.3 s');
+  });
+
+  it('starts over on the next question, waiting for its photo', async () => {
+    const { user, time, api } = await startTimed();
+    loadPhoto();
+    time.advance(2300);
+    await user.click(button(currentQuestion(api).emotion));
+    await user.click(await nextButton());
+    await screen.findByText('Question 2 of 3');
+    expect(timer()).toHaveTextContent('—');
+    loadPhoto();
+    expect(timer()).toHaveTextContent('0.0 s');
+  });
+
+  it('sends the milliseconds since the photo loaded as clientElapsedMs', async () => {
+    const { user, time, api } = await startTimed();
+    const rec = recordRequests();
+    loadPhoto();
+    time.advance(2340);
+    const q = currentQuestion(api);
+    await user.click(button(q.emotion));
+    await nextButton();
+    expect(rec.answers).toEqual([{ emotion: q.emotion, clientElapsedMs: 2340 }]);
+  });
+
+  it('rounds clientElapsedMs to a whole number', async () => {
+    const { user, time, api } = await startTimed();
+    const rec = recordRequests();
+    loadPhoto();
+    time.advance(1234.56);
+    const q = currentQuestion(api);
+    await user.click(button(q.emotion));
+    await nextButton();
+    expect(rec.answers).toEqual([{ emotion: q.emotion, clientElapsedMs: 1235 }]);
+  });
+
+  it('never sends more than MAX_CLIENT_ELAPSED_MS, and the answer is still accepted', async () => {
+    const { user, time, api } = await startTimed();
+    const rec = recordRequests();
+    loadPhoto();
+    time.advance(MAX_CLIENT_ELAPSED_MS * 2);
+    const q = currentQuestion(api);
+    await user.click(button(q.emotion));
+    await nextButton();
+    expect(rec.answers).toEqual([{ emotion: q.emotion, clientElapsedMs: MAX_CLIENT_ELAPSED_MS }]);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('omits clientElapsedMs when the photo never loaded', async () => {
+    const { user, time, api } = await startTimed();
+    const rec = recordRequests();
+    time.advance(4000);
+    const q = currentQuestion(api);
+    await user.click(button(q.emotion));
+    await nextButton();
+    expect(rec.answers).toEqual([{ emotion: q.emotion }]);
+  });
+
+  it('shows the points earned for a hit, next to the celebration', async () => {
+    const { user, time, api } = await startTimed();
+    loadPhoto();
+    time.advance(5000); // 1 s grace + one half-life: 50 points
+    await user.click(button(currentQuestion(api).emotion));
+    expect(await screen.findByText('+50 points')).toBeInTheDocument();
+    expect(celebration()).not.toBeNull();
+    expect(screen.getByText(MESSAGES[0]!)).toBeInTheDocument();
+  });
+
+  it('shows +0 points for a miss', async () => {
+    const { user, time, api } = await startTimed();
+    loadPhoto();
+    time.advance(500);
+    await user.click(button(otherThan(currentQuestion(api).emotion)));
+    expect(await screen.findByText('+0 points')).toBeInTheDocument();
+    expect(screen.getByText(/not quite/i)).toBeInTheDocument();
+  });
+
+  it('says "1 point" for the slowest hit', async () => {
+    const { user, time, api } = await startTimed();
+    loadPhoto();
+    time.advance(60_000);
+    await user.click(button(currentQuestion(api).emotion));
+    expect(await screen.findByText('+1 point')).toBeInTheDocument();
+  });
+
+  it('shows no points before the answer', async () => {
+    await startTimed();
+    expect(screen.queryByText(/^\+\d+ points?$/)).not.toBeInTheDocument();
+  });
+
+  it('announces the points with the result', async () => {
+    const live = () => document.querySelector<HTMLElement>('[aria-live="polite"]');
+    const { user, time, api } = await startTimed();
+    loadPhoto();
+    time.advance(5000);
+    await user.click(button(currentQuestion(api).emotion));
+    await waitFor(() => expect(live()).toHaveTextContent('Correct. 50 points.'));
+    await user.click(await nextButton());
+    await screen.findByText('Question 2 of 3');
+    const q = currentQuestion(api);
+    await user.click(button(otherThan(q.emotion)));
+    await waitFor(() =>
+      expect(live()).toHaveTextContent(`Incorrect. The answer was ${label(q.emotion)}. 0 points.`),
+    );
+  });
+
+  it('shows the result, points and Next at once even if the round total never refreshes', async () => {
+    const { user, time, api } = await startTimed();
+    await waitFor(() => expect(screen.getByText(/round total/i)).toHaveTextContent('0 points'));
+    server.use(http.get('/api/rounds/:id', () => delay('infinite')));
+    loadPhoto();
+    time.advance(5000);
+    await user.click(button(currentQuestion(api).emotion));
+    expect(await screen.findByText('+50 points')).toBeInTheDocument();
+    expect(screen.getByText(MESSAGES[0]!)).toBeInTheDocument();
+    // The total is refreshing, so it shows a dash, never the stale 0 or a made-up 50.
+    expect(screen.getByText(/round total/i)).toHaveTextContent('Round total: —');
+    await user.click(await nextButton());
+    expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
+  });
+
+  it('keeps the timer running after a failed submit and retries with the full time', async () => {
+    const { user, time, api } = await startTimed();
+    const rec = recordRequests();
+    const q = currentQuestion(api);
+    loadPhoto();
+    time.advance(2000);
+    server.use(
+      http.post(
+        '/api/questions/:id/answer',
+        () => HttpResponse.json({ error: 'internal', message: 'Could not save' }, { status: 500 }),
+        { once: true },
+      ),
+    );
+    await user.click(button(q.emotion));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    time.advance(1000);
+    expect(timer()).toHaveTextContent('3.0 s');
+    await user.click(button(q.emotion));
+    await nextButton();
+    expect(timer()).toHaveTextContent('3.0 s');
+    expect(rec.answers).toEqual([
+      { emotion: q.emotion, clientElapsedMs: 2000 },
+      { emotion: q.emotion, clientElapsedMs: 3000 },
+    ]);
+  });
+
+  describe('round total', () => {
+    const total = () => screen.getByText(/round total/i);
+
+    it('shows the total as the server reports it, updated after each answer', async () => {
+      const { user, time, api } = await startTimed();
+      await waitFor(() => expect(total()).toHaveTextContent('Round total: 0 points'));
+      loadPhoto();
+      time.advance(5000);
+      await user.click(button(currentQuestion(api).emotion));
+      await waitFor(() => expect(total()).toHaveTextContent('Round total: 50 points'));
+      await user.click(await nextButton());
+      await screen.findByText('Question 2 of 3');
+      expect(total()).toHaveTextContent('Round total: 50 points');
+      await user.click(button(otherThan(currentQuestion(api).emotion)));
+      await screen.findByText('+0 points');
+      expect(total()).toHaveTextContent('Round total: 50 points');
+    });
+
+    it('does not work the total out itself: it shows what the server sends', async () => {
+      const { user, time, api } = await startTimed();
+      const [round] = [...api.state.rounds.values()];
+      server.use(
+        http.get('/api/rounds/:id', () =>
+          HttpResponse.json({
+            round: { ...round, questionIds: undefined, points: 777 },
+            points: 777,
+            perEmotion: [],
+          }),
+        ),
+      );
+      loadPhoto();
+      time.advance(5000);
+      await user.click(button(currentQuestion(api).emotion));
+      await screen.findByText('+50 points');
+      await waitFor(() => expect(total()).toHaveTextContent('Round total: 777 points'));
+    });
+
+    it('is still right after a reload mid-round', async () => {
+      const { user, time, api } = await startTimed();
+      loadPhoto();
+      time.advance(5000);
+      await user.click(button(currentQuestion(api).emotion));
+      await user.click(await nextButton());
+      await screen.findByText('Question 2 of 3');
+      const [roundId] = [...api.state.rounds.keys()];
+      document.body.innerHTML = '';
+      renderRoute(`/rounds/${roundId}`);
+      await screen.findByText('Question 2 of 3');
+      await waitFor(() => expect(total()).toHaveTextContent('Round total: 50 points'));
+    });
+
+    it('shows a loading indicator, not 0 points, while the total loads', async () => {
+      installMockApi();
+      hang('/api/rounds/:id');
+      renderRoute(`/players/${ALICE.id}/play`);
+      await screen.findByText(/question 1 of/i);
+      expect(screen.getByRole('status', { name: /round total/i })).toBeInTheDocument();
+      expect(total()).not.toHaveTextContent('0 points');
+    });
+
+    it('says the total is unavailable, not 0, when it fails to load', async () => {
+      installMockApi();
+      fail('/api/rounds/:id');
+      renderRoute(`/players/${ALICE.id}/play`);
+      await screen.findByText(/question 1 of/i);
+      await waitFor(() => expect(total()).toHaveTextContent(/unavailable/i));
+      expect(total()).not.toHaveTextContent('0 points');
     });
   });
 });
