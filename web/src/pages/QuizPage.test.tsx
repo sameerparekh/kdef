@@ -2,7 +2,7 @@ import { EMOTIONS } from '@kdef/shared';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ALICE,
   currentQuestion,
@@ -12,7 +12,7 @@ import {
   installMockApi,
 } from '../test/utils';
 import { server } from '../test/server';
-import { CORRECT_ADVANCE_MS } from '../lib/timing';
+import { CELEBRATION_MS, CELEBRATIONS, MESSAGES, celebrationRandom } from '../lib/celebration';
 
 async function startQuiz(roundLength = 3) {
   const api = installMockApi({ roundLength });
@@ -26,7 +26,7 @@ function useClock() {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   return userEvent.setup({ advanceTimers: (ms) => void vi.advanceTimersByTime(ms) });
 }
-const pause = (ms = CORRECT_ADVANCE_MS) => act(() => vi.advanceTimersByTimeAsync(ms));
+const pause = (ms = CELEBRATION_MS) => act(() => vi.advanceTimersByTimeAsync(ms));
 
 /** Records the API calls the page makes, as `POST /api/...` strings, plus /answer bodies. */
 function recordRequests() {
@@ -39,9 +39,40 @@ function recordRequests() {
   return { calls, answers, nexts: () => calls.filter((c) => c.endsWith('/next')).length };
 }
 
+/** Makes the next celebration this kind with this message (the page draws kind, then message). */
+function pinCelebration(kind: (typeof CELEBRATIONS)[number], message = MESSAGES[0]!) {
+  const draws = [
+    (CELEBRATIONS.indexOf(kind) + 0.5) / CELEBRATIONS.length,
+    (MESSAGES.indexOf(message) + 0.5) / MESSAGES.length,
+  ];
+  let i = 0;
+  vi.spyOn(celebrationRandom, 'next').mockImplementation(() => draws[i++ % draws.length]!);
+}
+
+/** Stubs the reduced-motion media query, which jsdom does not implement. */
+function setReducedMotion(reduce: boolean) {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: reduce && query.includes('prefers-reduced-motion'),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    onchange: null,
+    dispatchEvent: () => false,
+  }));
+}
+
+beforeEach(() => pinCelebration(CELEBRATIONS[0]!));
+
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+const celebration = () => document.querySelector<HTMLElement>('[data-celebration]');
+const nextButton = () => screen.findByRole('button', { name: /^next$/i });
 
 const button = (emotion: string) => screen.getByRole('button', { name: new RegExp(emotion, 'i') });
 
@@ -107,24 +138,86 @@ describe('QuizPage', () => {
     }
   });
 
-  it('keeps the confirmation delay under 300 ms so a correct answer feels immediate', () => {
-    expect(CORRECT_ADVANCE_MS).toBeGreaterThan(0);
-    expect(CORRECT_ADVANCE_MS).toBeLessThanOrEqual(300);
-  });
-
-  it('on a correct answer confirms it, locks the buttons, then goes to the next question', async () => {
+  it('on a correct answer celebrates, locks the buttons, and waits for Next', async () => {
     const api = await startQuiz();
     const q = currentQuestion(api);
     const user = userEvent.setup();
     await user.click(button(q.emotion));
-    expect(await screen.findByText(/correct!/i)).toBeInTheDocument();
+    expect(await screen.findByText(MESSAGES[0]!)).toBeInTheDocument();
     expect(button(q.emotion)).toBeDisabled();
     expect(button(otherThan(q.emotion))).toBeDisabled();
     expect(screen.queryByText(/looks like on this person/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^next$/i })).not.toBeInTheDocument();
+    expect(await nextButton()).toBeInTheDocument();
+    expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
+    await user.click(await nextButton());
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^next$/i })).not.toBeInTheDocument();
     expect(button('angry')).toBeEnabled();
+  });
+
+  it('does not advance by itself after a correct answer, however long it waits', async () => {
+    const user = useClock();
+    const api = await startQuiz();
+    const rec = recordRequests();
+    await user.click(button(currentQuestion(api).emotion));
+    await nextButton();
+    await pause(CELEBRATION_MS * 10);
+    expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
+    expect(rec.nexts()).toBe(0);
+    expect(screen.getByRole('button', { name: /^next$/i })).toBeEnabled();
+  });
+
+  it('shows the picked message and the picked celebration kind', async () => {
+    pinCelebration('unicorn', 'You got it!');
+    const api = await startQuiz();
+    const user = userEvent.setup();
+    await user.click(button(currentQuestion(api).emotion));
+    expect(await screen.findByText('You got it!')).toBeInTheDocument();
+    expect(celebration()).toHaveAttribute('data-celebration', 'unicorn');
+  });
+
+  it.each(CELEBRATIONS)('can play the %s celebration, hidden from assistive tech', async (kind) => {
+    pinCelebration(kind);
+    const api = await startQuiz();
+    const user = userEvent.setup();
+    await user.click(button(currentQuestion(api).emotion));
+    await nextButton();
+    expect(celebration()).toHaveAttribute('data-celebration', kind);
+    expect(celebration()).toHaveAttribute('aria-hidden', 'true');
+    expect(celebration()!.className).toContain('pointer-events-none');
+    expect(celebration()!.querySelector('img')).toBeNull();
+  });
+
+  it('removes the animation after it ends, leaving the message and Next', async () => {
+    const user = useClock();
+    const api = await startQuiz();
+    await user.click(button(currentQuestion(api).emotion));
+    await nextButton();
+    expect(celebration()).not.toBeNull();
+    await pause(CELEBRATION_MS);
+    expect(celebration()).toBeNull();
+    expect(screen.getByText(MESSAGES[0]!)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^next$/i })).toBeInTheDocument();
+  });
+
+  it('with reduced motion shows the message and Next but no animation', async () => {
+    setReducedMotion(true);
+    const api = await startQuiz();
+    const user = userEvent.setup();
+    await user.click(button(currentQuestion(api).emotion));
+    expect(await screen.findByText(MESSAGES[0]!)).toBeInTheDocument();
+    expect(await nextButton()).toBeInTheDocument();
+    expect(celebration()).toBeNull();
+    expect(document.querySelector('[class*="animate-"]')).toBeNull();
+  });
+
+  it('without a reduced-motion preference the animation plays', async () => {
+    setReducedMotion(false);
+    const api = await startQuiz();
+    const user = userEvent.setup();
+    await user.click(button(currentQuestion(api).emotion));
+    await nextButton();
+    expect(celebration()).not.toBeNull();
   });
 
   it('on a miss waits for the player and does not advance by itself', async () => {
@@ -133,9 +226,10 @@ describe('QuizPage', () => {
     const q = currentQuestion(api);
     await user.click(button(otherThan(q.emotion)));
     expect(await screen.findByText(/not quite/i)).toBeInTheDocument();
-    await pause(CORRECT_ADVANCE_MS * 10);
+    await pause(CELEBRATION_MS * 10);
     expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
     expect(screen.getByText(/not quite/i)).toBeInTheDocument();
+    expect(celebration()).toBeNull();
     expect(button(q.emotion)).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /^next$/i }));
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
@@ -153,24 +247,22 @@ describe('QuizPage', () => {
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
   });
 
-  it('keys pressed during the confirmation pause do nothing until it ends', async () => {
+  it('after a correct answer number keys are ignored and Enter advances exactly once', async () => {
     useClock();
     const api = await startQuiz();
     const q = currentQuestion(api);
     const rec = recordRequests();
     const right = String(EMOTIONS.indexOf(q.emotion) + 1);
     fireEvent.keyDown(window, { key: right });
-    await screen.findByText(/correct!/i); // the answer response is in; the pause has begun
+    await nextButton(); // the answer response is in; the celebration has begun
     fireEvent.keyDown(window, { key: right });
     fireEvent.keyDown(window, { key: '2' });
-    fireEvent.keyDown(window, { key: 'Enter' });
-    fireEvent.keyDown(window, { key: 'Enter' });
     await pause(10);
-    expect(rec.nexts()).toBe(0); // Enter did not cut the pause short
+    expect(rec.nexts()).toBe(0); // digits did not advance, and Enter has not been pressed
     expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
-    await pause();
+    fireEvent.keyDown(window, { key: 'Enter' });
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
-    await pause(CORRECT_ADVANCE_MS * 3);
+    await pause(CELEBRATION_MS * 3);
     expect(rec.answers).toEqual([{ emotion: q.emotion }]);
     expect(rec.nexts()).toBe(1);
     expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
@@ -179,7 +271,7 @@ describe('QuizPage', () => {
   });
 
   it.each([false, true])(
-    'leaving the quiz during the pause cancels the advance (strict: %s)',
+    'leaving the quiz during the celebration clears its timer (strict: %s)',
     async (strict) => {
       const user = useClock();
       const api = installMockApi({ roundLength: 1 });
@@ -187,27 +279,31 @@ describe('QuizPage', () => {
       await screen.findByText(/question 1 of/i);
       const rec = recordRequests();
       await user.click(button(currentQuestion(api).emotion));
-      await screen.findByText(/correct!/i);
+      await nextButton();
+      expect(celebration()).not.toBeNull();
       await user.click(screen.getByRole('link', { name: 'Home' }));
       expect(await screen.findByRole('heading', { name: "Who's playing?" })).toBeInTheDocument();
-      await pause(CORRECT_ADVANCE_MS * 3);
+      expect(celebration()).toBeNull();
+      // No celebration timer survives the unmount.
+      const timersAfterLeaving = vi.getTimerCount();
+      await pause(CELEBRATION_MS * 3);
+      expect(vi.getTimerCount()).toBeLessThanOrEqual(timersAfterLeaving);
       expect(screen.getByRole('heading', { name: "Who's playing?" })).toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: /round complete/i })).not.toBeInTheDocument();
       expect(rec.nexts()).toBe(0);
     },
   );
 
-  it('advances exactly once under StrictMode', async () => {
-    useClock();
+  it('advances exactly once under StrictMode when Next is clicked', async () => {
     const api = installMockApi({ roundLength: 3 });
     renderRoute(`/players/${ALICE.id}/play`, { strict: true });
     await screen.findByText(/question 1 of/i);
     const rec = recordRequests();
-    fireEvent.keyDown(window, {
-      key: String(EMOTIONS.indexOf(currentQuestion(api).emotion) + 1),
-    });
+    const user = userEvent.setup();
+    await user.click(button(currentQuestion(api).emotion));
+    await user.click(await nextButton());
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
-    await pause(CORRECT_ADVANCE_MS * 3);
+    await act(() => new Promise((r) => setTimeout(r, 50)));
     expect(rec.nexts()).toBe(1);
     expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
   });
@@ -231,8 +327,10 @@ describe('QuizPage', () => {
     const q = currentQuestion(api);
     const user = userEvent.setup();
     await user.keyboard(String(EMOTIONS.indexOf(q.emotion) + 1));
-    expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
+    await nextButton();
     expect(api.state.questions.get(q.id)?.chosen).toBe(q.emotion);
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
   });
 
   it('advances with the Next button and updates progress', async () => {
@@ -245,10 +343,23 @@ describe('QuizPage', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '1');
   });
 
-  it('goes straight to the summary after a correct last answer', async () => {
+  it('after a correct last answer celebrates and waits for See results', async () => {
     const api = await startQuiz(1);
     const user = userEvent.setup();
     await user.click(button(currentQuestion(api).emotion));
+    const seeResults = await screen.findByRole('button', { name: /see results/i });
+    expect(screen.queryByRole('heading', { name: /round complete/i })).not.toBeInTheDocument();
+    expect(screen.getByText(MESSAGES[0]!)).toBeInTheDocument();
+    await user.click(seeResults);
+    expect(await screen.findByRole('heading', { name: /round complete/i })).toBeInTheDocument();
+  });
+
+  it('after a correct last answer Enter goes to the summary', async () => {
+    const api = await startQuiz(1);
+    const user = userEvent.setup();
+    await user.click(button(currentQuestion(api).emotion));
+    await screen.findByRole('button', { name: /see results/i });
+    await user.keyboard('{Enter}');
     expect(await screen.findByRole('heading', { name: /round complete/i })).toBeInTheDocument();
   });
 
@@ -264,6 +375,7 @@ describe('QuizPage', () => {
     const api = await startQuiz();
     const user = userEvent.setup();
     await user.click(button(currentQuestion(api).emotion));
+    await user.click(await nextButton());
     await screen.findByText('Question 2 of 3');
     const [roundId] = [...api.state.rounds.keys()];
     // A fresh render at the round URL is what a browser reload does.
@@ -276,6 +388,7 @@ describe('QuizPage', () => {
     const api = await startQuiz(1);
     const user = userEvent.setup();
     await user.click(button(currentQuestion(api).emotion));
+    await user.click(await screen.findByRole('button', { name: /see results/i }));
     await screen.findByRole('heading', { name: /round complete/i });
     const [roundId] = [...api.state.rounds.keys()];
     document.body.innerHTML = '';
@@ -347,7 +460,7 @@ describe('QuizPage', () => {
       server.use(http.post('/api/rounds/:id/next', () => delay('infinite')));
       await user.click(button(currentQuestion(api).emotion));
       await waitFor(() => expect(live()).toHaveTextContent('Correct.'));
-      await pause();
+      await user.click(await nextButton());
       expect(screen.queryByText('Question 1 of 3')).not.toBeInTheDocument();
       expect(screen.getByRole('status')).toHaveTextContent(/loading question/i);
       expect(live()).toBe(region);
@@ -370,6 +483,7 @@ describe('QuizPage', () => {
       const user = userEvent.setup();
       await user.click(button(currentQuestion(api).emotion));
       await waitFor(() => expect(live()).toHaveTextContent('Correct.'));
+      await user.click(await nextButton());
       await screen.findByText('Question 2 of 3');
       // Stale "Correct." must not sit over an unanswered question, and clearing it lets an
       // identical result on this question count as a change the screen reader speaks.
@@ -382,6 +496,7 @@ describe('QuizPage', () => {
       const api = await startQuiz(1);
       const user = userEvent.setup();
       await user.click(button(currentQuestion(api).emotion));
+      await user.click(await screen.findByRole('button', { name: /see results/i }));
       expect(await screen.findByRole('heading', { name: /round complete/i })).toBeInTheDocument();
       expect(live()).toHaveTextContent('Correct.');
     });
@@ -398,6 +513,7 @@ describe('QuizPage', () => {
       const api = await startQuiz(1);
       const user = userEvent.setup();
       await user.click(button(currentQuestion(api).emotion));
+      await user.click(await screen.findByRole('button', { name: /see results/i }));
       await screen.findByRole('heading', { name: /round complete/i });
       expect(live()).toHaveTextContent('Correct.');
       await user.click(screen.getByRole('link', { name: 'Home' }));
@@ -415,7 +531,7 @@ describe('QuizPage', () => {
       expect(live()).toHaveTextContent('');
     });
 
-    it('is empty after leaving during the confirmation pause', async () => {
+    it('is empty after leaving during the celebration', async () => {
       const user = useClock();
       const api = await startQuiz();
       await user.click(button(currentQuestion(api).emotion));
