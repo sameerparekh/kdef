@@ -1,6 +1,6 @@
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
-import type { ApiError } from '@kdef/shared';
+import { ERROR_CODES, type ApiError } from '@kdef/shared';
 import type { Clock } from './clock.js';
 import type { Config } from './config.js';
 import type { Db } from './db/connect.js';
@@ -39,7 +39,7 @@ export async function buildApp(
     const status = (err as { statusCode?: number }).statusCode;
     if (typeof status === 'number' && status >= 400 && status < 500) {
       const body: ApiError = {
-        error: status === 404 ? 'not_found' : 'bad_request',
+        error: status === 404 ? ERROR_CODES.notFound : ERROR_CODES.badRequest,
         message: err instanceof Error ? err.message : 'Bad request',
       };
       return reply.status(status).send(body);
@@ -62,7 +62,10 @@ export async function buildApp(
       if (req.method === 'GET' && !req.url.startsWith('/api/')) {
         return reply.sendFile('index.html');
       }
-      const body: ApiError = { error: 'not_found', message: `${req.method} ${req.url} not found` };
+      const body: ApiError = {
+        error: ERROR_CODES.notFound,
+        message: `${req.method} ${req.url} not found`,
+      };
       return reply.status(404).send(body);
     });
   }

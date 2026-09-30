@@ -3,6 +3,7 @@ import {
   CreatePlayerRequest,
   Leaderboard,
   NextResponse,
+  NoContent,
   Player,
   PlayerList,
   PlayerStats,
@@ -11,7 +12,6 @@ import {
   type Emotion,
 } from '@kdef/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { z } from 'zod';
 import { request } from './client';
 
 /** All React Query keys live here so invalidation stays consistent. */
@@ -49,7 +49,7 @@ export function useDeletePlayer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (playerId: string) =>
-      request(z.null(), `/api/players/${playerId}`, { method: 'DELETE' }),
+      request(NoContent, `/api/players/${playerId}`, { method: 'DELETE' }),
     onSuccess: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: qk.players }),
