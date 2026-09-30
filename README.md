@@ -22,6 +22,10 @@ If the other device can't connect, the host firewall may be blocking the port: a
 
 The KDEF directory must contain one folder per emotion (`angry/ disgust/ fear/ happy/ neutral/ sad/ surprise/`). It defaults to `/Volumes/brenn/KDEF`. The server loads the images into Postgres on first startup and doesn't read the directory after that.
 
+## Deploy to the Plex host
+
+`scripts/deploy-plex.sh` deploys over SSH with the photos mounted read-only over NFS. See [docs/deploy-plex.md](docs/deploy-plex.md).
+
 ## Develop
 
 See [CLAUDE.md](CLAUDE.md) for the layout, the commands, and the rules this repo follows.
