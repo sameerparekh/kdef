@@ -3,7 +3,8 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
-      // Celebration animations (src/components/Celebration.tsx). All finish inside CELEBRATION_MS.
+      // Celebration animations (src/components/Celebration.tsx). Durations here are only defaults: timingsFor() in Celebration.tsx sets each piece's
+      // delay and duration inline from CELEBRATION_MS, so all pieces finish inside it.
       keyframes: {
         confetti: {
           '0%': { transform: 'translateY(-1.5rem) rotate(0deg)', opacity: '1' },

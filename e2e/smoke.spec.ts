@@ -1,11 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { AnswerResponse, EMOTIONS, Leaderboard, PlayerList } from '@kdef/shared';
 import { expect, test, type Page } from '@playwright/test';
+import { MESSAGES } from '../web/src/lib/celebration.js';
 
 const ROUND_LENGTH = 20;
 const PLAYER_NAME = 'Smoke Tester';
-/** Any of the cheerful lines a correct answer can show (MESSAGES in web/src/lib/celebration.ts). */
-const CELEBRATION_MESSAGE = /^(Nice!|You got it!|Great eye!|Spot on!|Nailed it!|Yes! Well done!)$/;
+/** Any of the cheerful lines a correct answer can show. */
+const CELEBRATION_MESSAGE = new RegExp(
+  `^(${MESSAGES.map((m) => m.replace(/\W/g, '\\$&')).join('|')})$`,
+);
 const PROJECT = process.env.E2E_COMPOSE_PROJECT ?? 'kdef-e2e';
 /** The same -f files as e2e/run.sh, which exports E2E_COMPOSE_FILES. */
 const COMPOSE_FILES = (
@@ -39,6 +42,10 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
   request,
 }) => {
   // 1. Create a player without choosing a colour: the server picks one with the live RNG.
+  let answerRequests = 0;
+  page.on('request', (r) => {
+    if (/\/api\/questions\/[^/]+\/answer$/.test(r.url())) answerRequests++;
+  });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: "Who's playing?" })).toBeVisible();
   await page.getByLabel('Name').fill(PLAYER_NAME);
@@ -93,9 +100,8 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
       await expect(wrong).toHaveCount(0);
       await expect(page.getByRole('img', { name: 'Same person, for comparison' })).toHaveCount(0);
       await expect(page.getByText(`Question ${q} of ${ROUND_LENGTH}`)).toBeVisible();
-      // Digit keys are ignored until the player moves on.
+      // Digit keys are ignored until the player moves on: no second /answer request goes out.
       await page.keyboard.press('1');
-      await expect(page.getByText(`Question ${q} of ${ROUND_LENGTH}`)).toBeVisible();
       await page.keyboard.press('Enter');
       await expect(moved).toBeVisible();
     } else {
@@ -111,6 +117,8 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
     }
   }
   expect(hits + misses).toBe(ROUND_LENGTH);
+  // One answer per question: keys pressed while the celebration waits sent nothing.
+  expect(answerRequests).toBe(ROUND_LENGTH);
   // The shown emotion comes from the live RNG, so a miss is probable, not guaranteed: each press
   // hits with p of about 1/7, so P(no miss in 20) is about 1e-17. The celebration branch is the
   // opposite case: P(no hit in 20) is about 4.6%, so it is checked whenever it occurs but is NOT

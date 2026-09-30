@@ -46,10 +46,7 @@ function ProgressBar({
   );
 }
 
-/**
- * The result line. The corner of the quiz for what follows an answer: the timer and points of a
- * scored round can sit beside the banner in FeedbackRow. `message` is the cheerful line for a hit.
- */
+/** The result line: the cheerful `message` after a hit, the right answer after a miss. */
 function FeedbackBanner({ result, message }: { result: AnswerResponse; message: string }) {
   return result.correct ? (
     <p className="rounded-lg bg-emerald-100 px-4 py-2 text-xl font-bold text-emerald-800">
@@ -86,6 +83,7 @@ function QuestionView({
 }) {
   const submit = useSubmitAnswer();
   const inFlight = useRef(false);
+  const advancing = useRef(false);
   const result = submit.data ?? null;
   const answering = submit.isPending;
   // Drawn once per question (QuestionView remounts per question, and state survives re-renders).
@@ -122,6 +120,9 @@ function QuestionView({
   }
 
   function advance() {
+    // A held Enter repeats: move on once, like the single-answer guard.
+    if (advancing.current) return;
+    advancing.current = true;
     if (result?.roundComplete) onComplete();
     else onNext();
   }
