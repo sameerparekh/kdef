@@ -23,6 +23,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
   cleanup();
   server.resetHandlers();
+  server.events.removeAllListeners();
   try {
     localStorage.clear();
   } catch {

@@ -1,11 +1,10 @@
 /// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { omitMockServiceWorker } from './vite/omitMockServiceWorker';
 
-export default defineConfig(({ command }) => ({
-  // public/ holds only MSW's mockServiceWorker.js: ship it in dev, or in a build made for mock mode.
-  publicDir: command === 'serve' || process.env.VITE_MOCK_API === 'true' ? 'public' : false,
-  plugins: [react()],
+export default defineConfig({
+  plugins: [react(), omitMockServiceWorker()],
   server: {
     port: 5173,
     // All interfaces, for testing from phones/tablets on the LAN. On an untrusted network run
@@ -19,4 +18,4 @@ export default defineConfig(({ command }) => ({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
   },
-}));
+});

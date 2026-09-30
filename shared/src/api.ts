@@ -29,6 +29,10 @@ export const Player = z.object({
 });
 export type Player = z.infer<typeof Player>;
 
+/** `DELETE /api/players/:id` answers 204 with no body; the client reads that as `null`. */
+export const NoContent = z.null();
+export type NoContent = z.infer<typeof NoContent>;
+
 export const PlayerList = z.object({ players: z.array(Player) });
 export type PlayerList = z.infer<typeof PlayerList>;
 

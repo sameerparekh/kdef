@@ -1,3 +1,4 @@
+import { PLAYER_COLORS } from '@kdef/shared';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -53,6 +54,16 @@ describe('HomePage (Who is playing?)', () => {
     await user.type(screen.getByLabelText(/name/i), 'ALICE');
     await user.click(screen.getByRole('button', { name: /add player/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
+  });
+
+  it('offers exactly the shared player palette as swatches', async () => {
+    installMockApi();
+    renderRoute('/');
+    await screen.findByRole('link', { name: /alice/i });
+    const swatches = within(screen.getByRole('group', { name: /colour/i })).getAllByRole('button');
+    expect(swatches.map((b) => b.getAttribute('aria-label'))).toEqual(
+      PLAYER_COLORS.map((c) => `Colour ${c}`),
+    );
   });
 
   it('validates an empty or too-long name without calling the server', async () => {
