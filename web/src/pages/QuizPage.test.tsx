@@ -226,10 +226,12 @@ describe('QuizPage', () => {
     const q = currentQuestion(api);
     await user.click(button(otherThan(q.emotion)));
     expect(await screen.findByText(/not quite/i)).toBeInTheDocument();
+    // Straight after the miss, before any timer runs: a celebration that unmounts itself later
+    // would otherwise hide one rendered on a miss.
+    expect(celebration()).toBeNull();
     await pause(CELEBRATION_MS * 10);
     expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
     expect(screen.getByText(/not quite/i)).toBeInTheDocument();
-    expect(celebration()).toBeNull();
     expect(button(q.emotion)).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /^next$/i }));
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
@@ -261,6 +263,7 @@ describe('QuizPage', () => {
     expect(rec.nexts()).toBe(0); // digits did not advance, and Enter has not been pressed
     expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Enter' });
+    fireEvent.keyDown(window, { key: 'Enter' }); // a held key repeats
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
     await pause(CELEBRATION_MS * 3);
     expect(rec.answers).toEqual([{ emotion: q.emotion }]);
@@ -292,15 +295,15 @@ describe('QuizPage', () => {
   );
 
   it('advances exactly once under StrictMode when Next is clicked', async () => {
+    const user = useClock();
     const api = installMockApi({ roundLength: 3 });
     renderRoute(`/players/${ALICE.id}/play`, { strict: true });
     await screen.findByText(/question 1 of/i);
     const rec = recordRequests();
-    const user = userEvent.setup();
     await user.click(button(currentQuestion(api).emotion));
     await user.click(await nextButton());
     expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
-    await act(() => new Promise((r) => setTimeout(r, 50)));
+    await pause(CELEBRATION_MS * 3);
     expect(rec.nexts()).toBe(1);
     expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
   });
