@@ -77,6 +77,12 @@ export const NextResponse = z.discriminatedUnion('status', [
 ]);
 export type NextResponse = z.infer<typeof NextResponse>;
 
+/**
+ * Upper bound on a client-reported answer time (1 hour). Anything slower scores the minimum
+ * anyway; the cap keeps the value inside the Postgres integer column (questions.client_elapsed_ms).
+ */
+export const MAX_CLIENT_ELAPSED_MS = 60 * 60 * 1000;
+
 export const AnswerRequest = z.object({
   emotion: Emotion,
   /**
@@ -85,7 +91,7 @@ export const AnswerRequest = z.object({
    * measurement minus a fixed photo-load allowance and its own measurement, so a client can
    * neither add time nor claim much less than the server saw.
    */
-  clientElapsedMs: z.number().nonnegative().int().optional(),
+  clientElapsedMs: z.number().nonnegative().int().max(MAX_CLIENT_ELAPSED_MS).optional(),
 });
 export type AnswerRequest = z.infer<typeof AnswerRequest>;
 
