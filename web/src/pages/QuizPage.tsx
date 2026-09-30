@@ -12,7 +12,7 @@ import { ApiRequestError } from '../api/client';
 import { qk, useCurrentQuestion, useRoundSummary, useSubmitAnswer } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
 import { clock } from '../lib/clock';
-import { emotionLabel, formatPointsEarned } from '../lib/format';
+import { emotionLabel, formatPoints, formatPointsEarned } from '../lib/format';
 import type { AnnounceContext } from '../components/Layout';
 import { Celebration } from '../components/Celebration';
 import { QuestionTimer } from '../components/QuestionTimer';
@@ -67,11 +67,14 @@ function RoundTotal({ roundId }: { roundId: string }) {
         <span role="status" aria-label="Loading round total">
           —
         </span>
+      ) : summary.isFetching ? (
+        // Refreshing after an answer: no number rather than a stale one.
+        <span aria-label="Updating round total">—</span>
       ) : summary.isError ? (
         <span>unavailable</span>
       ) : (
         <span className="font-semibold tabular-nums text-slate-900">
-          {summary.data.points} {summary.data.points === 1 ? 'point' : 'points'}
+          {formatPoints(summary.data.points)}
         </span>
       )}
     </p>
@@ -97,7 +100,7 @@ function FeedbackBanner({ result, message }: { result: AnswerResponse; message: 
  * still match one element; the banner itself is not announced (it has no status role).
  */
 function announcement(result: AnswerResponse): string {
-  const points = `${result.points} ${result.points === 1 ? 'point' : 'points'}`;
+  const points = formatPoints(result.points);
   return result.correct
     ? `Correct. ${points}.`
     : `Incorrect. The answer was ${emotionLabel(result.correctEmotion)}. ${points}.`;

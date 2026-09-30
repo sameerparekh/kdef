@@ -20,9 +20,14 @@ export function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
+/** "87 points", or "1 point": the one place the singular is decided. */
+export function formatPoints(points: number): string {
+  return `${points} ${points === 1 ? 'point' : 'points'}`;
+}
+
 /** "+87 points" for an answer's award ("+1 point", "+0 points"). */
 export function formatPointsEarned(points: number): string {
-  return `+${points} ${points === 1 ? 'point' : 'points'}`;
+  return `+${formatPoints(points)}`;
 }
 
 /** "37.5" for average points per answer; null (nothing to average) is a dash, never 0. */

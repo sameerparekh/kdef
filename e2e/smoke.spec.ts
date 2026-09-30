@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { AnswerResponse, EMOTIONS, Leaderboard, PlayerList } from '@kdef/shared';
 import { expect, test, type Page } from '@playwright/test';
 import { MESSAGES } from '../web/src/lib/celebration.js';
-import { formatAvgPoints, formatPointsEarned } from '../web/src/lib/format.js';
+import { formatAvgPoints, formatPoints, formatPointsEarned } from '../web/src/lib/format.js';
 
 const ROUND_LENGTH = 20;
 const PLAYER_NAME = 'Smoke Tester';
@@ -89,8 +89,8 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
     expect(result.points).toBeGreaterThanOrEqual(result.correct ? 1 : 0);
     if (!result.correct) expect(result.points).toBe(0);
     await expect(page.getByText(formatPointsEarned(result.points), { exact: true })).toBeVisible();
-    await expect(page.getByText(/^Round total: /)).toContainText(
-      `${roundPoints} point${roundPoints === 1 ? '' : 's'}`,
+    await expect(page.getByText(/^Round total: /)).toHaveText(
+      `Round total: ${formatPoints(roundPoints)}`,
     );
 
     // Both outcomes stop and wait for Next / See results / Enter.
@@ -145,7 +145,7 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
   await expect(page.getByText(`${hits} correct out of ${ROUND_LENGTH} answers`)).toBeVisible();
   await expect(
     page.getByText(
-      `${roundPoints} points in total, ${formatAvgPoints(roundPoints / ROUND_LENGTH)} on average per answer`,
+      `${formatPoints(roundPoints)} in total, ${formatAvgPoints(roundPoints / ROUND_LENGTH)} on average per answer`,
     ),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Confusion matrix' })).toBeVisible();

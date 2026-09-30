@@ -98,14 +98,16 @@ export function useSubmitAnswer() {
             ? { emotion: vars.emotion }
             : { emotion: vars.emotion, clientElapsedMs: vars.clientElapsedMs },
       }),
-    onSuccess: (_result, vars) =>
-      Promise.all([
-        // The quiz page shows the round total from the server's summary, so refresh it (exact:
-        // the /next query shares this key prefix and must not refetch).
-        qc.invalidateQueries({ queryKey: qk.round(vars.roundId), exact: true }),
+    onSuccess: (_result, vars) => {
+      // The quiz page shows the round total from the server's summary. Refresh it in the
+      // background, not in the returned promise, so the result never waits for it (exact: the
+      // /next query shares this key prefix and must not refetch).
+      void qc.invalidateQueries({ queryKey: qk.round(vars.roundId), exact: true });
+      return Promise.all([
         qc.invalidateQueries({ queryKey: qk.allStats }),
         qc.invalidateQueries({ queryKey: qk.leaderboard }),
-      ]),
+      ]);
+    },
   });
 }
 
