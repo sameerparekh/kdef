@@ -82,12 +82,13 @@ describe('speed scoring through the answer route', () => {
     expect(row).toEqual({ points: 71, response_ms: 3000, client_elapsed_ms: 60_000 });
   });
 
-  it('rejects a negative or fractional client elapsed time with a 400', async () => {
+  it('rejects a negative, fractional or absurdly large client elapsed time with a 400', async () => {
     const p = await createPlayer(ctx, 'Negative');
     const round = await startRound(ctx, p.id);
     const next = await nextQuestion(ctx, round.id);
     if (next.status !== 'question') throw new Error('expected a question');
-    for (const clientElapsedMs of [-5, 12.5]) {
+    // 3e9 would overflow the integer column (22003) if it got past validation.
+    for (const clientElapsedMs of [-5, 12.5, 3_000_000_000]) {
       const res = await ctx.app.inject({
         method: 'POST',
         url: `/api/questions/${next.question.questionId}/answer`,
