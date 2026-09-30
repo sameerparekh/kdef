@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { usePlayerStats } from '../api/queries';
 import { AccuracyBar } from '../components/AccuracyBar';
 import { ErrorMessage, Loading } from '../components/Feedback';
-import { angleLabel, emotionLabel, formatAccuracy } from '../lib/format';
+import { angleLabel, emotionLabel, formatAccuracy, formatAvgPoints } from '../lib/format';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -169,6 +169,9 @@ export function StatsPage() {
         <>
           <p className="mt-2 text-lg text-slate-600">
             {s.totalCorrect} correct out of {s.totalAnswered} answers
+          </p>
+          <p className="mt-1 text-lg text-slate-600">
+            {`${s.totalPoints} points in total, ${formatAvgPoints(s.averagePoints)} on average per answer`}
           </p>
           <EmotionAccuracy perEmotion={s.perEmotion} />
           <AngleAccuracy perAngle={s.perAngle} />

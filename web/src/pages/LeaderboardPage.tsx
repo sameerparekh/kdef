@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useLeaderboard } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
-import { emotionLabel, formatAccuracy } from '../lib/format';
+import { emotionLabel, formatAccuracy, formatAvgPoints } from '../lib/format';
 
 export function LeaderboardPage() {
   const board = useLeaderboard();
@@ -21,12 +21,13 @@ export function LeaderboardPage() {
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-4xl font-bold">Leaderboard</h1>
       <p className="mt-2 text-slate-600">
-        Accuracy over each player&apos;s last {windowSize} answers. You need {minAnswers} answers to
+        Ranked by average points per answer (a miss counts as 0) over each player&apos;s last{' '}
+        {windowSize} answers. A quicker correct answer earns more. You need {minAnswers} answers to
         be ranked.
       </p>
       <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-        The quiz serves each player their weakest emotions, so accuracy is measured on a harder mix
-        for stronger players.
+        The quiz serves each player their weakest emotions, so both points and accuracy are measured
+        on a harder mix for stronger players.
       </p>
 
       {ranked.length === 0 ? (
@@ -37,6 +38,7 @@ export function LeaderboardPage() {
             <tr className="text-sm text-slate-500">
               <th scope="col">Rank</th>
               <th scope="col">Player</th>
+              <th scope="col">Avg points</th>
               <th scope="col">Accuracy</th>
               <th scope="col">Answers in window</th>
               <th scope="col">Best</th>
@@ -55,6 +57,7 @@ export function LeaderboardPage() {
                   />
                   {e.player.displayName}
                 </td>
+                <td className="font-semibold tabular-nums">{formatAvgPoints(e.avgPoints)}</td>
                 <td className="tabular-nums">{formatAccuracy(e.accuracy)}</td>
                 <td className="tabular-nums">{e.windowAnswered}</td>
                 <td>{e.bestEmotion ? emotionLabel(e.bestEmotion) : '—'}</td>

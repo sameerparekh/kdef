@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import type { Db } from '../db/connect.js';
-import { pointsFor } from './points.js';
+import { pointsFor } from '@kdef/shared';
 
 /**
  * Fills `questions.points` for answered rows that predate the column (V003), from their

@@ -1,6 +1,8 @@
 import { sql } from 'kysely';
 import {
   EMOTIONS,
+  effectiveElapsedMs,
+  pointsFor,
   type Angle,
   type AnswerResponse,
   type Emotion,
@@ -22,7 +24,6 @@ import {
 import type { AppDeps } from '../app.js';
 import type { Db } from '../db/connect.js';
 import { HttpError, conflict, notFound } from '../errors.js';
-import { effectiveElapsedMs, pointsFor } from '../scoring/points.js';
 import { isRoundComplete, roundProgress, toRound } from '../stats/stats.js';
 import { ROUND_LENGTH } from './config.js';
 
@@ -226,7 +227,7 @@ export async function answerQuestion(
     const correct = shown.name === chosen;
     const now = clock.now();
     // response_ms is the raw server measurement and client_elapsed_ms the raw client value.
-    // Points are computed here once, from the effective time (scoring/points.ts), and stored.
+    // Points are computed here once, from the effective time (shared/src/scoring.ts), and stored.
     const responseMs = Math.max(0, now.getTime() - q.asked_at.getTime());
     const points = pointsFor(correct, effectiveElapsedMs(responseMs, clientElapsedMs));
     await trx

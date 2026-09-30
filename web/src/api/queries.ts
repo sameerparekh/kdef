@@ -84,13 +84,25 @@ export function useCurrentQuestion(roundId: string) {
 export function useSubmitAnswer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { questionId: string; emotion: Emotion }) =>
+    mutationFn: (vars: {
+      questionId: string;
+      roundId: string;
+      emotion: Emotion;
+      /** Milliseconds since the photo loaded; omitted when it never did. */
+      clientElapsedMs?: number;
+    }) =>
       request(AnswerResponse, `/api/questions/${vars.questionId}/answer`, {
         method: 'POST',
-        body: { emotion: vars.emotion },
+        body:
+          vars.clientElapsedMs === undefined
+            ? { emotion: vars.emotion }
+            : { emotion: vars.emotion, clientElapsedMs: vars.clientElapsedMs },
       }),
-    onSuccess: () =>
+    onSuccess: (_result, vars) =>
       Promise.all([
+        // The quiz page shows the round total from the server's summary, so refresh it (exact:
+        // the /next query shares this key prefix and must not refetch).
+        qc.invalidateQueries({ queryKey: qk.round(vars.roundId), exact: true }),
         qc.invalidateQueries({ queryKey: qk.allStats }),
         qc.invalidateQueries({ queryKey: qk.leaderboard }),
       ]),

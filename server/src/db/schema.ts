@@ -51,9 +51,9 @@ export interface QuestionsTable {
   correct: boolean | null;
   /** Server-measured time from asked_at to answer. */
   response_ms: number | null;
-  /** Client-reported time, as sent (unclamped); null when not sent. Scoring: scoring/points.ts. */
+  /** Client-reported time, as sent (unclamped); null when not sent. Scoring: shared/src/scoring.ts. */
   client_elapsed_ms: number | null;
-  /** Speed-scoring points (scoring/points.ts); null until answered (or until backfilled). */
+  /** Speed-scoring points (shared/src/scoring.ts); null until answered (or until backfilled). */
   points: number | null;
 }
 
