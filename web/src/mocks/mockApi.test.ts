@@ -1,4 +1,13 @@
-import { ApiError, AnswerRequest, CreatePlayerRequest, formatZodIssues } from '@kdef/shared';
+import {
+  AnswerResponse,
+  ApiError,
+  AnswerRequest,
+  CreatePlayerRequest,
+  LOAD_ALLOWANCE_MS,
+  MAX_CLIENT_ELAPSED_MS,
+  formatZodIssues,
+  pointsFor,
+} from '@kdef/shared';
 import { describe, expect, it } from 'vitest';
 import { ALICE, installMockApi } from '../test/utils';
 
@@ -85,5 +94,50 @@ describe('mock API errors match the server', () => {
         body: { error: 'bad_request', message: formatZodIssues(issues) },
       });
     }
+  });
+});
+
+describe('mock API scoring uses the shared formula', () => {
+  /** Starts a round, lets `serverMs` pass on the mock's clock, answers, and returns the response. */
+  async function answerAfter(serverMs: number, body: Record<string, unknown>, hit: boolean) {
+    let t = 1_000;
+    const api = installMockApi({ roundLength: 2, clock: () => t });
+    await call('POST', `/api/players/${ALICE.id}/rounds`);
+    await call('POST', `/api/rounds/${[...api.state.rounds.keys()][0]}/next`);
+    const q = [...api.state.questions.values()][0]!;
+    t += serverMs;
+    const emotion = hit ? q.emotion : q.emotion === 'happy' ? 'sad' : 'happy';
+    const res = await fetch(`/api/questions/${q.id}/answer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ emotion, ...body }),
+    });
+    return { res, api, parsed: res.ok ? AnswerResponse.parse(await res.json()) : null };
+  }
+
+  it('scores a hit from the server-measured time when the client sends none', async () => {
+    const { parsed } = await answerAfter(5000, {}, true);
+    expect(parsed?.points).toBe(pointsFor(true, 5000));
+    expect(parsed?.points).toBe(50);
+  });
+
+  it('uses the client time, clamped to the load allowance below the server time', async () => {
+    const ok = await answerAfter(6000, { clientElapsedMs: 5000 }, true);
+    expect(ok.parsed?.points).toBe(50);
+    const tooFast = await answerAfter(9000, { clientElapsedMs: 0 }, true);
+    expect(tooFast.parsed?.points).toBe(pointsFor(true, 9000 - LOAD_ALLOWANCE_MS));
+    const tooSlow = await answerAfter(3000, { clientElapsedMs: 30_000 }, true);
+    expect(tooSlow.parsed?.points).toBe(pointsFor(true, 3000));
+  });
+
+  it('scores a miss 0 and keeps the round total', async () => {
+    const { parsed, api } = await answerAfter(100, {}, false);
+    expect(parsed?.points).toBe(0);
+    expect([...api.state.rounds.values()][0]?.points).toBe(0);
+  });
+
+  it('rejects a client time above the cap like the server', async () => {
+    const { res } = await answerAfter(100, { clientElapsedMs: MAX_CLIENT_ELAPSED_MS + 1 }, true);
+    expect(res.status).toBe(400);
   });
 });

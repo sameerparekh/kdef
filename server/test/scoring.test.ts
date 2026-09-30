@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { EMOTIONS, RoundSummary, type Emotion } from '@kdef/shared';
+import { EMOTIONS, RoundSummary, pointsFor, type Emotion } from '@kdef/shared';
 import { backfillPoints } from '../src/scoring/backfill.js';
-import { pointsFor } from '../src/scoring/points.js';
 import { insertPool } from './helpers/images.js';
 import {
   actualEmotion,

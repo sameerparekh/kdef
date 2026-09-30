@@ -7,8 +7,8 @@ function seeded() {
   const roundId = api.seedRound(ALICE.id, [
     ['angry', 'angry'],
     ['happy', 'sad'],
-    ['sad', 'sad'],
-    ['fear', 'fear'],
+    ['sad', 'sad', 5000],
+    ['fear', 'fear', 9000],
   ]);
   return { api, roundId };
 }
@@ -19,6 +19,7 @@ describe('SummaryPage', () => {
     renderRoute('/rounds/abc/summary');
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.queryByText(/\/ 0/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/total points/i)).not.toBeInTheDocument();
   });
 
   it('shows the server error', async () => {
@@ -39,6 +40,13 @@ describe('SummaryPage', () => {
     // An emotion that did not come up is shown as not asked, not as 0%.
     const disgust = screen.getByRole('row', { name: /disgust/i });
     expect(within(disgust).getByText('not asked')).toBeInTheDocument();
+  });
+
+  it('shows the round total in points, as the server reports it', async () => {
+    const { roundId } = seeded();
+    renderRoute(`/rounds/${roundId}/summary`);
+    // 100 (instant) + 0 (miss) + 50 (5 s) + 25 (9 s)
+    expect(await screen.findByText(/total points/i)).toHaveTextContent('Total points: 175');
   });
 
   it('offers play again, stats and leaderboard', async () => {
