@@ -1,11 +1,12 @@
 import { EMOTIONS, type AnswerResponse, type Emotion, type Question } from '@kdef/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { ApiRequestError } from '../api/client';
 import { qk, useCurrentQuestion, useSubmitAnswer } from '../api/queries';
 import { ErrorMessage, Loading } from '../components/Feedback';
 import { emotionLabel } from '../lib/format';
+import type { AnnounceContext } from '../components/Layout';
 import { CORRECT_ADVANCE_MS } from '../lib/timing';
 
 /** Alt text must never reveal the emotion, so it is generic. */
@@ -46,32 +47,53 @@ function ProgressBar({
 
 function FeedbackBanner({ result }: { result: AnswerResponse }) {
   return result.correct ? (
-    <p
-      role="status"
-      className="rounded-lg bg-emerald-100 px-4 py-2 text-xl font-bold text-emerald-800"
-    >
+    <p className="rounded-lg bg-emerald-100 px-4 py-2 text-xl font-bold text-emerald-800">
       ✓ Correct!
     </p>
   ) : (
-    <p role="status" className="rounded-lg bg-red-100 px-4 py-2 text-xl font-bold text-red-800">
+    <p className="rounded-lg bg-red-100 px-4 py-2 text-xl font-bold text-red-800">
       ✗ Not quite: it was {emotionLabel(result.correctEmotion)}
     </p>
   );
+}
+
+/**
+ * The words a screen reader speaks for an answer, in the live region owned by Layout. The wording
+ * differs from the banner's so that text queries on the banner (`/not quite/i`, `/it was X$/`)
+ * still match one element; the banner itself is not announced (it has no status role).
+ */
+function announcement(result: AnswerResponse): string {
+  return result.correct
+    ? 'Correct.'
+    : `Incorrect. The answer was ${emotionLabel(result.correctEmotion)}.`;
 }
 
 function QuestionView({
   question,
   onNext,
   onComplete,
+  onAnnounce,
 }: {
   question: Question;
   onNext: () => void;
   onComplete: () => void;
+  onAnnounce: (text: string) => void;
 }) {
   const submit = useSubmitAnswer();
   const inFlight = useRef(false);
   const result = submit.data ?? null;
   const answering = submit.isPending;
+
+  // Clear the previous result when a question appears, so it is never read against the wrong
+  // question and an identical result next time is a change the screen reader speaks.
+  useEffect(() => {
+    onAnnounce('');
+    // Mount only: onAnnounce is a stable state setter.
+  }, []);
+  useEffect(() => {
+    if (result) onAnnounce(announcement(result));
+    // Only [result]: same stable setter.
+  }, [result]);
 
   function answer(emotion: Emotion) {
     // A ref, not render state: a second key can arrive before React re-renders.
@@ -191,25 +213,27 @@ export function QuizPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const current = useCurrentQuestion(roundId);
+  const { announce } = useOutletContext<AnnounceContext>();
 
-  if (current.isPending) return <Loading label="Loading question…" />;
-  if (current.isError) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <ErrorMessage error={current.error} what="Could not load the question" />
-      </main>
-    );
-  }
-  if (current.data.status === 'complete') {
-    return <Navigate to={`/rounds/${roundId}/summary`} replace />;
-  }
-  const { question } = current.data;
   return (
-    <QuestionView
-      key={question.questionId}
-      question={question}
-      onNext={() => void qc.resetQueries({ queryKey: qk.next(roundId) })}
-      onComplete={() => navigate(`/rounds/${roundId}/summary`)}
-    />
+    <>
+      {current.isPending ? (
+        <Loading label="Loading question…" />
+      ) : current.isError ? (
+        <main className="mx-auto max-w-3xl p-6">
+          <ErrorMessage error={current.error} what="Could not load the question" />
+        </main>
+      ) : current.data.status === 'complete' ? (
+        <Navigate to={`/rounds/${roundId}/summary`} replace />
+      ) : (
+        <QuestionView
+          key={current.data.question.questionId}
+          question={current.data.question}
+          onNext={() => void qc.resetQueries({ queryKey: qk.next(roundId) })}
+          onComplete={() => navigate(`/rounds/${roundId}/summary`)}
+          onAnnounce={announce}
+        />
+      )}
+    </>
   );
 }

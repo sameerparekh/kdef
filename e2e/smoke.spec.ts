@@ -75,7 +75,7 @@ test('create a player, play a round, see stats and the leaderboard, survive a re
     const result = AnswerResponse.parse(await (await answered).json());
 
     // A correct answer moves on by itself; only a miss stops and waits for Next / Enter.
-    const wrong = page.getByRole('status').filter({ hasText: 'Not quite' });
+    const wrong = page.getByText(/Not quite/);
     const moved =
       q < ROUND_LENGTH
         ? page.getByText(`Question ${q + 1} of ${ROUND_LENGTH}`)
