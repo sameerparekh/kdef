@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { GRACE_MS, HALF_LIFE_MS, MAX_POINTS, MIN_POINTS } from './config.js';
+import { GRACE_MS, HALF_LIFE_MS, LOAD_ALLOWANCE_MS, MAX_POINTS, MIN_POINTS } from './config.js';
 import { effectiveElapsedMs, pointsFor } from './points.js';
 
 describe('scoring constants', () => {
   it('start at the values the issue specifies', () => {
-    expect([MAX_POINTS, GRACE_MS, HALF_LIFE_MS, MIN_POINTS]).toEqual([100, 1000, 4000, 1]);
+    expect([MAX_POINTS, GRACE_MS, HALF_LIFE_MS, MIN_POINTS, LOAD_ALLOWANCE_MS]).toEqual([
+      100, 1000, 4000, 1, 2000,
+    ]);
   });
 });
 
@@ -56,9 +58,18 @@ describe('pointsFor', () => {
 });
 
 describe('effectiveElapsedMs', () => {
-  it('uses the client value when it is smaller than the server value', () => {
-    expect(effectiveElapsedMs(3000, 500)).toBe(500);
-    expect(effectiveElapsedMs(3000, 0)).toBe(0);
+  it('uses the client value when it is within the load allowance below the server value', () => {
+    expect(effectiveElapsedMs(3000, 2500)).toBe(2500);
+    expect(effectiveElapsedMs(3000, 1000)).toBe(1000);
+  });
+
+  it('never lets the client claim less than the server value minus the load allowance', () => {
+    expect(effectiveElapsedMs(9000, 0)).toBe(9000 - LOAD_ALLOWANCE_MS);
+    expect(effectiveElapsedMs(9000, 6999)).toBe(7000);
+  });
+
+  it('floors at 0 when the server value is smaller than the allowance', () => {
+    expect(effectiveElapsedMs(1500, 0)).toBe(0);
   });
 
   it('never lets the client claim more time than the server measured', () => {
@@ -66,12 +77,7 @@ describe('effectiveElapsedMs', () => {
     expect(effectiveElapsedMs(3000, 3000)).toBe(3000);
   });
 
-  it('falls back to the server value when the client value is absent or negative', () => {
+  it('uses the server value when there is no client value', () => {
     expect(effectiveElapsedMs(3000, undefined)).toBe(3000);
-    expect(effectiveElapsedMs(3000, -1)).toBe(3000);
-  });
-
-  it('rounds to whole milliseconds', () => {
-    expect(effectiveElapsedMs(3000, 499.6)).toBe(500);
   });
 });

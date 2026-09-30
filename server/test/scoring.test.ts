@@ -45,7 +45,7 @@ describe('speed scoring through the answer route', () => {
     );
     const row = await ctx.testDb.db
       .selectFrom('questions')
-      .select(['points', 'response_ms'])
+      .select(['points', 'response_ms', 'client_elapsed_ms'])
       .where('id', '=', next.question.questionId)
       .executeTakeFirstOrThrow();
     return { res, row, round };
@@ -55,14 +55,23 @@ describe('speed scoring through the answer route', () => {
     const p = await createPlayer(ctx, 'NoClient');
     const { res, row } = await answerAfter(p.id, 5000);
     expect(res.points).toBe(50);
-    expect(row).toEqual({ points: 50, response_ms: 5000 });
+    expect(row).toEqual({ points: 50, response_ms: 5000, client_elapsed_ms: null });
   });
 
-  it('uses a smaller client elapsed time and stores it as the response time', async () => {
+  it('uses a smaller client time within the load allowance, keeping the server time raw', async () => {
     const p = await createPlayer(ctx, 'FastClient');
-    const { res, row } = await answerAfter(p.id, 9000, { clientElapsedMs: 5000 });
-    expect(res.points).toBe(50);
-    expect(row).toEqual({ points: 50, response_ms: 5000 });
+    const { res, row } = await answerAfter(p.id, 9000, { clientElapsedMs: 8000 });
+    // Scored on 8000 ms: 100 * 2^(-7000/4000) = 29.7 -> 30.
+    expect(res.points).toBe(30);
+    expect(row).toEqual({ points: 30, response_ms: 9000, client_elapsed_ms: 8000 });
+  });
+
+  it('cannot score below the load-allowance floor with clientElapsedMs 0', async () => {
+    const p = await createPlayer(ctx, 'Zero');
+    const { res, row } = await answerAfter(p.id, 9000, { clientElapsedMs: 0 });
+    // Floor is 9000 - 2000 = 7000 ms: 100 * 2^(-6000/4000) = 35.4 -> 35, not 100.
+    expect(res.points).toBe(35);
+    expect(row).toEqual({ points: 35, response_ms: 9000, client_elapsed_ms: 0 });
   });
 
   it('ignores a client elapsed time larger than the server measured', async () => {
@@ -70,14 +79,22 @@ describe('speed scoring through the answer route', () => {
     const { res, row } = await answerAfter(p.id, 3000, { clientElapsedMs: 60_000 });
     // 100 * 2^(-2000/4000) = 70.7 -> 71, from the server's 3000 ms.
     expect(res.points).toBe(71);
-    expect(row).toEqual({ points: 71, response_ms: 3000 });
+    expect(row).toEqual({ points: 71, response_ms: 3000, client_elapsed_ms: 60_000 });
   });
 
-  it('ignores a negative client elapsed time', async () => {
+  it('rejects a negative or fractional client elapsed time with a 400', async () => {
     const p = await createPlayer(ctx, 'Negative');
-    const { res, row } = await answerAfter(p.id, 9000, { clientElapsedMs: -5 });
-    expect(res.points).toBe(25);
-    expect(row).toEqual({ points: 25, response_ms: 9000 });
+    const round = await startRound(ctx, p.id);
+    const next = await nextQuestion(ctx, round.id);
+    if (next.status !== 'question') throw new Error('expected a question');
+    for (const clientElapsedMs of [-5, 12.5]) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/questions/${next.question.questionId}/answer`,
+        payload: { emotion: 'happy', clientElapsedMs },
+      });
+      expect(res.statusCode).toBe(400);
+    }
   });
 
   it('scores a miss 0 however fast, and stores it', async () => {

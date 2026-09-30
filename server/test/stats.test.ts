@@ -212,12 +212,11 @@ describe('GET /api/leaderboard ordering by speed', () => {
   afterAll(async () => ctx.close());
 
   it('ranks speed over accuracy: fast and sloppy beats slow and perfect', async () => {
-    const tag = (n: string) => n;
-    const fast = await createPlayer(ctx, tag('Fast')); // all correct at 1 s: 100 each
-    const fastTwin = await createPlayer(ctx, tag('FastTwin')); // same, so it ties with Fast
-    const fastMore = await createPlayer(ctx, tag('FastMore')); // same average, more answers
-    const sloppy = await createPlayer(ctx, tag('Sloppy')); // half right at 1 s: average 50
-    const slow = await createPlayer(ctx, tag('Slow')); // all correct at 9 s: 25 each
+    const fast = await createPlayer(ctx, 'Fast'); // all correct at 1 s: 100 each
+    const fastTwin = await createPlayer(ctx, 'FastTwin'); // same, so it ties with Fast
+    const fastMore = await createPlayer(ctx, 'FastMore'); // same average, more answers
+    const sloppy = await createPlayer(ctx, 'Sloppy'); // half right at 1 s: average 50
+    const slow = await createPlayer(ctx, 'Slow'); // all correct at 9 s: 25 each
     const n = LEADERBOARD_MIN_ANSWERS;
     await play(ctx, fast.id, n, right);
     await play(ctx, fastTwin.id, n, right);
