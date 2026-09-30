@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { LEADERBOARD_EMOTION_MIN_ANSWERS, LEADERBOARD_MIN_ANSWERS } from './config.js';
-import { accuracyOf, bestAndWorst, rankPlayers } from './ranking.js';
+import { accuracyOf, averagePointsOf, bestAndWorst, rankPlayers } from './ranking.js';
 
 const player = (name: string, windowAnswered: number, windowCorrect: number, created = 0) => ({
   name,
   windowAnswered,
   windowCorrect,
+  // Every hit is worth 100 unless the test says otherwise, so the accuracy-shaped cases
+  // below rank the same way under average points.
+  windowPoints: windowCorrect * 100,
   createdAt: new Date(2026, 0, 1, 0, 0, created).toISOString(),
 });
 
@@ -13,6 +16,13 @@ describe('accuracyOf', () => {
   it('is null with no answers, else correct / answered', () => {
     expect(accuracyOf(0, 0)).toBeNull();
     expect(accuracyOf(4, 3)).toBe(0.75);
+  });
+});
+
+describe('averagePointsOf', () => {
+  it('is null with no answers, else points / answered (misses count as 0)', () => {
+    expect(averagePointsOf(0, 0)).toBeNull();
+    expect(averagePointsOf(4, 150)).toBe(37.5);
   });
 });
 
@@ -76,6 +86,41 @@ describe('rankPlayers', () => {
       ['few', null],
       ['some', null],
       ['none', null],
+    ]);
+  });
+
+  it('ranks by average points per answer, not accuracy', () => {
+    const at = (name: string, answered: number, points: number, created = 0) => ({
+      ...player(name, answered, answered, created),
+      windowPoints: points,
+    });
+    const out = rankPlayers([
+      at('slowPerfect', full, full * 25, 0),
+      at('fastSloppy', full, full * 50, 1),
+      at('fastPerfect', full, full * 100, 2),
+    ]);
+    expect(out.map((o) => [o.item.name, o.rank])).toEqual([
+      ['fastPerfect', 1],
+      ['fastSloppy', 2],
+      ['slowPerfect', 3],
+    ]);
+  });
+
+  it('breaks equal averages by more window answers, and shares a rank only on equal answers', () => {
+    const at = (name: string, answered: number, points: number, created = 0) => ({
+      ...player(name, answered, answered, created),
+      windowPoints: points,
+    });
+    // All average exactly 50.
+    const out = rankPlayers([
+      at('few', full, full * 50, 0),
+      at('twinA', 2 * full, 2 * full * 50, 1),
+      at('twinB', 2 * full, 2 * full * 50, 2),
+    ]);
+    expect(out.map((o) => [o.item.name, o.rank])).toEqual([
+      ['twinA', 1],
+      ['twinB', 1],
+      ['few', 3],
     ]);
   });
 });

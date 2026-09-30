@@ -97,6 +97,8 @@ describe('rounds and questions', () => {
       chosenEmotion: actual,
       contrastImageUrl: null,
       roundComplete: false,
+      // 100 * 2^(-500/4000) = 91.7
+      points: 92,
     });
     const row = await ctx.testDb.db
       .selectFrom('questions')
