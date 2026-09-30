@@ -114,7 +114,11 @@ interface EmotionRow {
   emotion: Emotion;
   answered: string;
   correct: string;
-  points?: string;
+}
+
+/** A per-emotion row that also carries the summed points. */
+interface EmotionPointsRow extends EmotionRow {
+  points: string;
 }
 
 /** One tally per emotion, in EMOTIONS order, including emotions with no answers. */
@@ -194,7 +198,8 @@ export async function playerStats(db: Db, playerId: string): Promise<PlayerStats
       .execute(),
   ]);
 
-  const perEmotion = emotionTallies(emotionRows as EmotionRow[]);
+  const emotionPointRows = emotionRows as EmotionPointsRow[];
+  const perEmotion = emotionTallies(emotionPointRows);
   const angleByName = new Map(angleRows.map((r) => [r.angle, r]));
   const perAngle: AngleTally[] = ANGLES.map((angle) => {
     const a = num(angleByName.get(angle)?.answered);
@@ -212,7 +217,7 @@ export async function playerStats(db: Db, playerId: string): Promise<PlayerStats
     );
 
   const totalAnswered = perEmotion.reduce((n, t) => n + t.answered, 0);
-  const totalPoints = emotionRows.reduce((n, r) => n + num(r.points), 0);
+  const totalPoints = emotionPointRows.reduce((n, r) => n + num(r.points), 0);
   return {
     player: toPlayer(playerRow),
     totalAnswered,

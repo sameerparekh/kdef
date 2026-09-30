@@ -1,4 +1,4 @@
-import { GRACE_MS, HALF_LIFE_MS, MAX_POINTS, MIN_POINTS } from './config.js';
+import { GRACE_MS, HALF_LIFE_MS, LOAD_ALLOWANCE_MS, MAX_POINTS, MIN_POINTS } from './config.js';
 
 /**
  * The one points formula. A miss scores 0. A correct answer scores
@@ -13,12 +13,13 @@ export function pointsFor(correct: boolean, elapsedMs: number): number {
 }
 
 /**
- * The time a question is scored on: the smaller of what the server measured and what the
- * client reported (the client clock starts when the photo finished loading, the server's when
- * the question was issued), so the client can shorten its time but never lengthen it. A
- * missing or negative client value is ignored. Whole milliseconds.
+ * The one place the scored time is derived. With no client value it is the server's time
+ * (`questions.response_ms`). Otherwise it is the client's time clamped to
+ * [serverMs - LOAD_ALLOWANCE_MS, serverMs] (and never below 0): the client can shorten its time
+ * by at most the photo-load allowance and can never lengthen it. Whole milliseconds.
  */
 export function effectiveElapsedMs(serverMs: number, clientMs: number | undefined): number {
-  const usable = clientMs !== undefined && clientMs >= 0;
-  return Math.round(usable ? Math.min(serverMs, clientMs) : serverMs);
+  if (clientMs === undefined) return serverMs;
+  const floor = Math.max(0, serverMs - LOAD_ALLOWANCE_MS);
+  return Math.min(serverMs, Math.max(floor, clientMs));
 }

@@ -225,13 +225,10 @@ export async function answerQuestion(
     // The one place correctness is decided; it is stored and never re-derived.
     const correct = shown.name === chosen;
     const now = clock.now();
-    // response_ms holds the time the answer is scored on (see scoring/points.ts), and points
-    // are computed here once and stored; nothing else derives them.
-    const responseMs = effectiveElapsedMs(
-      Math.max(0, now.getTime() - q.asked_at.getTime()),
-      clientElapsedMs,
-    );
-    const points = pointsFor(correct, responseMs);
+    // response_ms is the raw server measurement and client_elapsed_ms the raw client value.
+    // Points are computed here once, from the effective time (scoring/points.ts), and stored.
+    const responseMs = Math.max(0, now.getTime() - q.asked_at.getTime());
+    const points = pointsFor(correct, effectiveElapsedMs(responseMs, clientElapsedMs));
     await trx
       .updateTable('questions')
       .set({
@@ -239,6 +236,7 @@ export async function answerQuestion(
         chosen_emotion_id: chosenRow.id,
         correct,
         response_ms: responseMs,
+        client_elapsed_ms: clientElapsedMs ?? null,
         points,
       })
       .where('id', '=', questionId)

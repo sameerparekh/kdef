@@ -6,7 +6,10 @@ import { pointsFor } from './points.js';
  * Fills `questions.points` for answered rows that predate the column (V003), from their
  * stored `response_ms`, using the same `pointsFor` as the answer route. SQL cannot call the
  * TypeScript formula, so this runs from TypeScript at boot, after migrations. It only touches
- * rows whose points are still null, so it is idempotent and cheap once everything is filled.
+ * rows whose points are still null (V003 has a partial index on exactly those rows, so once
+ * everything is filled each boot is an empty index probe), so it is idempotent. It relies on
+ * running before the server accepts requests: an old instance still serving after a newer one
+ * has backfilled would leave null points (counted as 0) until the next boot.
  * Returns the number of rows updated.
  */
 export async function backfillPoints(db: Db): Promise<number> {

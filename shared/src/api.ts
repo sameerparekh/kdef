@@ -81,10 +81,11 @@ export const AnswerRequest = z.object({
   emotion: Emotion,
   /**
    * Milliseconds from the photo finishing loading to the answer, as the client measured it.
-   * Optional. The server scores on the smaller of this and its own measurement, so a larger
-   * value is ignored; a negative value is ignored too.
+   * Optional, a non-negative integer. The server scores on this value clamped to between its own
+   * measurement minus a fixed photo-load allowance and its own measurement, so a client can
+   * neither add time nor claim much less than the server saw.
    */
-  clientElapsedMs: z.number().finite().optional(),
+  clientElapsedMs: z.number().nonnegative().int().optional(),
 });
 export type AnswerRequest = z.infer<typeof AnswerRequest>;
 

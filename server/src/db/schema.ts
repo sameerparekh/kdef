@@ -49,8 +49,10 @@ export interface QuestionsTable {
   answered_at: Timestamp | null;
   chosen_emotion_id: number | null;
   correct: boolean | null;
-  /** Time the answer is scored on: min(server-measured, client-reported). See scoring/points.ts. */
+  /** Server-measured time from asked_at to answer. */
   response_ms: number | null;
+  /** Client-reported time, as sent (unclamped); null when not sent. Scoring: scoring/points.ts. */
+  client_elapsed_ms: number | null;
   /** Speed-scoring points (scoring/points.ts); null until answered (or until backfilled). */
   points: number | null;
 }
