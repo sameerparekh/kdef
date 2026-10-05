@@ -128,7 +128,7 @@ describe('GET /api/leaderboard', () => {
     expect(board.minAnswers).toBe(LEADERBOARD_MIN_ANSWERS);
   });
 
-  it('ranks by average points over the last window of answers; unranked players follow with null rank', async () => {
+  it('ranks by accuracy over the last window of answers; unranked players follow with null rank', async () => {
     expect(LEADERBOARD_WINDOW).toBe(100);
     expect(LEADERBOARD_MIN_ANSWERS).toBe(40);
     const top = await createPlayer(ctx, 'Top');
@@ -203,7 +203,7 @@ describe('GET /api/leaderboard', () => {
   });
 });
 
-describe('GET /api/leaderboard ordering by speed', () => {
+describe('GET /api/leaderboard ignores speed when ordering', () => {
   let ctx: TestContext;
   beforeAll(async () => {
     ctx = await createTestApp(11);
@@ -211,12 +211,12 @@ describe('GET /api/leaderboard ordering by speed', () => {
   });
   afterAll(async () => ctx.close());
 
-  it('ranks speed over accuracy: fast and sloppy beats slow and perfect', async () => {
+  it('ranks accuracy over speed: slow and perfect beats fast and sloppy', async () => {
     const fast = await createPlayer(ctx, 'Fast'); // all correct at 1 s: 100 each
     const fastTwin = await createPlayer(ctx, 'FastTwin'); // same, so it ties with Fast
-    const fastMore = await createPlayer(ctx, 'FastMore'); // same average, more answers
+    const fastMore = await createPlayer(ctx, 'FastMore'); // same accuracy, more answers
     const sloppy = await createPlayer(ctx, 'Sloppy'); // half right at 1 s: average 50
-    const slow = await createPlayer(ctx, 'Slow'); // all correct at 9 s: 25 each
+    const slow = await createPlayer(ctx, 'Slow'); // all correct at 9 s: 25 each, ties with Fast
     const n = LEADERBOARD_MIN_ANSWERS;
     await play(ctx, fast.id, n, right);
     await play(ctx, fastTwin.id, n, right);
@@ -227,17 +227,14 @@ describe('GET /api/leaderboard ordering by speed', () => {
 
     const res = await ctx.app.inject({ method: 'GET', url: '/api/leaderboard' });
     const board = Leaderboard.parse(res.json());
-    const mine = board.entries;
-    expect(mine.map((e) => [e.player.displayName, e.rank, e.avgPoints])).toEqual([
-      ['FastMore', 1, 100],
-      ['Fast', 2, 100],
-      ['FastTwin', 2, 100],
-      ['Sloppy', 4, 50],
-      ['Slow', 5, 25],
+    expect(
+      board.entries.map((e) => [e.player.displayName, e.rank, e.accuracy, e.avgPoints]),
+    ).toEqual([
+      ['FastMore', 1, 1, 100],
+      ['Fast', 2, 1, 100],
+      ['FastTwin', 2, 1, 100],
+      ['Slow', 2, 1, 25],
+      ['Sloppy', 5, 0.5, 50],
     ]);
-    // Accuracy stays in the response and would have ordered Slow above Sloppy.
-    const acc = new Map(mine.map((e) => [e.player.displayName, e.accuracy]));
-    expect(acc.get('Slow')).toBe(1);
-    expect(acc.get('Sloppy')).toBe(0.5);
   });
 });

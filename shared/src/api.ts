@@ -163,8 +163,9 @@ export const LeaderboardEntry = z.object({
   rank: z.number().int().positive().nullable(),
   windowAnswered: z.number().int().nonnegative(),
   windowCorrect: z.number().int().nonnegative(),
+  /** Correct / answered over the window. Ranking uses this. */
   accuracy: Accuracy,
-  /** Points per answer over the window (misses count 0), or null with no answers. Ranking uses this. */
+  /** Points per answer over the window (misses count 0), or null with no answers. Shown, not ranked on. */
   avgPoints: z.number().nonnegative().nullable(),
   totalAnswered: z.number().int().nonnegative(),
   bestEmotion: Emotion.nullable(),

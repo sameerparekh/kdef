@@ -309,7 +309,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       });
       const ranked = scored
         .filter((s) => s.window.length >= MOCK_MIN_ANSWERS)
-        .sort((a, b) => b.avgPoints! - a.avgPoints!);
+        .sort((a, b) => b.correct / b.window.length - a.correct / a.window.length);
       const entries: LeaderboardEntry[] = [
         ...ranked,
         ...scored.filter((s) => s.window.length < MOCK_MIN_ANSWERS),

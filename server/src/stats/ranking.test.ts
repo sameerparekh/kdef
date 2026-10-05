@@ -6,8 +6,7 @@ const player = (name: string, windowAnswered: number, windowCorrect: number, cre
   name,
   windowAnswered,
   windowCorrect,
-  // Every hit is worth 100 unless the test says otherwise, so the accuracy-shaped cases
-  // below rank the same way under average points.
+  // Every hit is worth 100 unless the test says otherwise.
   windowPoints: windowCorrect * 100,
   createdAt: new Date(2026, 0, 1, 0, 0, created).toISOString(),
 });
@@ -89,37 +88,36 @@ describe('rankPlayers', () => {
     ]);
   });
 
-  it('ranks by average points per answer, not accuracy', () => {
-    const at = (name: string, answered: number, points: number, created = 0) => ({
-      ...player(name, answered, answered, created),
+  it('ranks by accuracy, not average points', () => {
+    const at = (name: string, answered: number, correct: number, points: number, created = 0) => ({
+      ...player(name, answered, correct, created),
       windowPoints: points,
     });
     const out = rankPlayers([
-      at('slowPerfect', full, full * 25, 0),
-      at('fastSloppy', full, full * 50, 1),
-      at('fastPerfect', full, full * 100, 2),
+      at('fastSloppy', full, full / 2, full * 100, 0),
+      at('slowPerfect', full, full, full * 25, 1),
+      at('midMid', full, (full * 3) / 4, full * 60, 2),
     ]);
     expect(out.map((o) => [o.item.name, o.rank])).toEqual([
-      ['fastPerfect', 1],
-      ['fastSloppy', 2],
-      ['slowPerfect', 3],
+      ['slowPerfect', 1],
+      ['midMid', 2],
+      ['fastSloppy', 3],
     ]);
   });
 
-  it('breaks equal averages by more window answers, and shares a rank only on equal answers', () => {
+  it('ignores points entirely: equal accuracy and answers share a rank whatever the points', () => {
     const at = (name: string, answered: number, points: number, created = 0) => ({
       ...player(name, answered, answered, created),
       windowPoints: points,
     });
-    // All average exactly 50.
     const out = rankPlayers([
-      at('few', full, full * 50, 0),
-      at('twinA', 2 * full, 2 * full * 50, 1),
-      at('twinB', 2 * full, 2 * full * 50, 2),
+      at('few', full, full * 100, 0),
+      at('slowTwin', 2 * full, 2 * full * 10, 1),
+      at('fastTwin', 2 * full, 2 * full * 90, 2),
     ]);
     expect(out.map((o) => [o.item.name, o.rank])).toEqual([
-      ['twinA', 1],
-      ['twinB', 1],
+      ['slowTwin', 1],
+      ['fastTwin', 1],
       ['few', 3],
     ]);
   });
