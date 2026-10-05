@@ -3,13 +3,15 @@ import {
   ApiError,
   AnswerRequest,
   CreatePlayerRequest,
+  type Emotion,
+  Leaderboard,
   LOAD_ALLOWANCE_MS,
   MAX_CLIENT_ELAPSED_MS,
   formatZodIssues,
   pointsFor,
 } from '@kdef/shared';
 import { describe, expect, it } from 'vitest';
-import { ALICE, installMockApi } from '../test/utils';
+import { ALICE, BOB, installMockApi } from '../test/utils';
 
 /**
  * The mock must answer errors the way the real server does, so a web test that passes on
@@ -139,5 +141,23 @@ describe('mock API scoring uses the shared formula', () => {
   it('rejects a client time above the cap like the server', async () => {
     const { res } = await answerAfter(100, { clientElapsedMs: MAX_CLIENT_ELAPSED_MS + 1 }, true);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('mock API leaderboard ranks like the server', () => {
+  it('breaks equal accuracy by more answers and shares a rank on exact ties', async () => {
+    const carol = { ...BOB, id: '33333333-3333-4333-8333-333333333333', displayName: 'Carol' };
+    const api = installMockApi({ players: [ALICE, BOB, carol] });
+    const hits = (n: number): [Emotion, Emotion][] =>
+      Array.from({ length: n }, () => ['happy', 'happy']);
+    api.seedRound(ALICE.id, hits(60));
+    api.seedRound(BOB.id, hits(60));
+    api.seedRound(carol.id, hits(70));
+    const board = Leaderboard.parse(await (await fetch('/api/leaderboard')).json());
+    expect(board.entries.map((e) => [e.player.displayName, e.rank])).toEqual([
+      ['Carol', 1],
+      ['Alice', 2],
+      ['Bob', 2],
+    ]);
   });
 });
