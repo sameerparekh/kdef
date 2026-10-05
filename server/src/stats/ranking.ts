@@ -53,9 +53,8 @@ export interface RankInput {
  *
  * Ranked players (windowAnswered >= LEADERBOARD_MIN_ANSWERS) come first, ordered by window
  * accuracy descending, then by more window answers. Points play no part in the order.
- * Players equal on both share a rank (competition
- * ranking: 1, 2, 2, 4). Unranked players follow with rank null, ordered by more window
- * answers, then by creation time.
+ * Players equal on both share a rank (competition ranking: 1, 2, 2, 4). Unranked players
+ * follow with rank null, ordered by more window answers, then by creation time.
  */
 export function rankPlayers<T extends RankInput>(
   players: readonly T[],

@@ -307,15 +307,20 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const avgPoints = window.length === 0 ? null : sumPoints(window) / window.length;
         return { player, window, correct, byAcc, avgPoints, total: all.length };
       });
+      // Same order as the server's rankPlayers: accuracy, then more window answers, with
+      // competition ranks (1, 2, 2, 4) on exact ties.
+      const acc = (s: (typeof scored)[number]) => pct(s.correct, s.window.length)!;
       const ranked = scored
         .filter((s) => s.window.length >= MOCK_MIN_ANSWERS)
-        .sort((a, b) => b.correct / b.window.length - a.correct / a.window.length);
+        .sort((a, b) => acc(b) - acc(a) || b.window.length - a.window.length);
+      const rankOf = (s: (typeof scored)[number]) =>
+        ranked.findIndex((r) => acc(r) === acc(s) && r.window.length === s.window.length) + 1;
       const entries: LeaderboardEntry[] = [
         ...ranked,
         ...scored.filter((s) => s.window.length < MOCK_MIN_ANSWERS),
       ].map((s) => ({
         player: s.player,
-        rank: s.window.length >= MOCK_MIN_ANSWERS ? ranked.indexOf(s) + 1 : null,
+        rank: s.window.length >= MOCK_MIN_ANSWERS ? rankOf(s) : null,
         windowAnswered: s.window.length,
         windowCorrect: s.correct,
         accuracy: pct(s.correct, s.window.length),
