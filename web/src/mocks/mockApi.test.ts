@@ -160,4 +160,25 @@ describe('mock API leaderboard ranks like the server', () => {
       ['Bob', 2],
     ]);
   });
+
+  it('orders exact ties and unranked players like the server, using creation time last', async () => {
+    const early = { ...BOB, id: '33333333-3333-4333-8333-333333333333', displayName: 'Early' };
+    const late = { ...ALICE, createdAt: '2026-02-01T00:00:00.000Z' };
+    const few = { ...BOB, createdAt: '2026-03-01T00:00:00.000Z' };
+    const more = { ...BOB, id: '44444444-4444-4444-8444-444444444444', displayName: 'More' };
+    const api = installMockApi({ players: [late, few, more, early] });
+    const hits = (n: number): [Emotion, Emotion][] =>
+      Array.from({ length: n }, () => ['happy', 'happy']);
+    api.seedRound(late.id, hits(60));
+    api.seedRound(early.id, hits(60));
+    api.seedRound(few.id, hits(5));
+    api.seedRound(more.id, hits(10));
+    const board = Leaderboard.parse(await (await fetch('/api/leaderboard')).json());
+    expect(board.entries.map((e) => [e.player.displayName, e.rank])).toEqual([
+      ['Early', 1],
+      ['Alice', 1],
+      ['More', null],
+      ['Bob', null],
+    ]);
+  });
 });

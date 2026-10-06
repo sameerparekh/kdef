@@ -22,6 +22,9 @@ import {
   formatZodIssues,
   notFoundMessage,
   pointsFor,
+  accuracyOf,
+  averagePointsOf,
+  rankPlayers,
 } from '@kdef/shared';
 import { http, HttpResponse, type RequestHandler } from 'msw';
 import type { ZodError } from 'zod';
@@ -83,10 +86,6 @@ export interface MockApi {
   seedRound(playerId: string, answers: SeedAnswer[]): string;
 }
 
-function pct(correct: number, answered: number): number | null {
-  return answered === 0 ? null : correct / answered;
-}
-
 function hue(id: string): number {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 360;
@@ -131,7 +130,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     return EMOTIONS.map((emotion) => {
       const mine = qs.filter((q) => q.emotion === emotion);
       const correct = mine.filter((q) => q.chosen === emotion).length;
-      return { emotion, answered: mine.length, correct, accuracy: pct(correct, mine.length) };
+      return {
+        emotion,
+        answered: mine.length,
+        correct,
+        accuracy: accuracyOf(mine.length, correct),
+      };
     });
   }
 
@@ -268,7 +272,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       const perAngle: AngleTally[] = ANGLES.map((angle) => {
         const mine = qs.filter((q) => q.angle === angle);
         const correct = mine.filter((q) => q.chosen === q.emotion).length;
-        return { angle, answered: mine.length, correct, accuracy: pct(correct, mine.length) };
+        return {
+          angle,
+          answered: mine.length,
+          correct,
+          accuracy: accuracyOf(mine.length, correct),
+        };
       });
       const confusion: ConfusionCell[] = [];
       for (const actual of EMOTIONS) {
@@ -284,7 +293,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         totalAnswered: qs.length,
         totalCorrect,
         totalPoints,
-        averagePoints: qs.length === 0 ? null : totalPoints / qs.length,
+        averagePoints: averagePointsOf(qs.length, totalPoints),
         perEmotion: tallies(qs),
         perAngle,
         confusion,
@@ -304,27 +313,23 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const byAcc = tallies(window)
           .filter((t) => t.accuracy !== null)
           .sort((a, b) => b.accuracy! - a.accuracy!);
-        const avgPoints = window.length === 0 ? null : sumPoints(window) / window.length;
-        return { player, window, correct, byAcc, avgPoints, total: all.length };
+        return { player, window, correct, byAcc, total: all.length };
       });
-      // Same order as the server's rankPlayers: accuracy, then more window answers, with
-      // competition ranks (1, 2, 2, 4) on exact ties.
-      const acc = (s: (typeof scored)[number]) => pct(s.correct, s.window.length)!;
-      const ranked = scored
-        .filter((s) => s.window.length >= MOCK_MIN_ANSWERS)
-        .sort((a, b) => acc(b) - acc(a) || b.window.length - a.window.length);
-      const rankOf = (s: (typeof scored)[number]) =>
-        ranked.findIndex((r) => acc(r) === acc(s) && r.window.length === s.window.length) + 1;
-      const entries: LeaderboardEntry[] = [
-        ...ranked,
-        ...scored.filter((s) => s.window.length < MOCK_MIN_ANSWERS),
-      ].map((s) => ({
+      const entries: LeaderboardEntry[] = rankPlayers(
+        scored.map((s) => ({
+          ...s,
+          windowAnswered: s.window.length,
+          windowCorrect: s.correct,
+          createdAt: s.player.createdAt,
+        })),
+        MOCK_MIN_ANSWERS,
+      ).map(({ item: s, rank }) => ({
         player: s.player,
-        rank: s.window.length >= MOCK_MIN_ANSWERS ? rankOf(s) : null,
-        windowAnswered: s.window.length,
-        windowCorrect: s.correct,
-        accuracy: pct(s.correct, s.window.length),
-        avgPoints: s.avgPoints,
+        rank,
+        windowAnswered: s.windowAnswered,
+        windowCorrect: s.windowCorrect,
+        accuracy: accuracyOf(s.windowAnswered, s.windowCorrect),
+        avgPoints: averagePointsOf(s.windowAnswered, sumPoints(s.window)),
         totalAnswered: s.total,
         bestEmotion: s.byAcc[0]?.emotion ?? null,
         worstEmotion: s.byAcc[s.byAcc.length - 1]?.emotion ?? null,
