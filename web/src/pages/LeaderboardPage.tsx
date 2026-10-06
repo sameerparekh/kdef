@@ -21,9 +21,9 @@ export function LeaderboardPage() {
     <main className="mx-auto max-w-4xl p-6">
       <h1 className="text-4xl font-bold">Leaderboard</h1>
       <p className="mt-2 text-slate-600">
-        Ranked by average points per answer (a miss counts as 0) over each player&apos;s last{' '}
-        {windowSize} answers. A quicker correct answer earns more. You need {minAnswers} answers to
-        be ranked.
+        Ranked by accuracy over each player&apos;s last {windowSize} answers. Average points per
+        answer (a quicker correct answer earns more, a miss counts as 0) is shown but does not
+        affect rank. You need {minAnswers} answers to be ranked.
       </p>
       <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
         The quiz serves each player their weakest emotions, so both points and accuracy are measured
@@ -38,8 +38,8 @@ export function LeaderboardPage() {
             <tr className="text-sm text-slate-500">
               <th scope="col">Rank</th>
               <th scope="col">Player</th>
-              <th scope="col">Avg points</th>
               <th scope="col">Accuracy</th>
+              <th scope="col">Avg points</th>
               <th scope="col">Answers in window</th>
               <th scope="col">Best</th>
               <th scope="col">Worst</th>
@@ -57,8 +57,8 @@ export function LeaderboardPage() {
                   />
                   {e.player.displayName}
                 </td>
-                <td className="font-semibold tabular-nums">{formatAvgPoints(e.avgPoints)}</td>
-                <td className="tabular-nums">{formatAccuracy(e.accuracy)}</td>
+                <td className="font-semibold tabular-nums">{formatAccuracy(e.accuracy)}</td>
+                <td className="tabular-nums">{formatAvgPoints(e.avgPoints)}</td>
                 <td className="tabular-nums">{e.windowAnswered}</td>
                 <td>{e.bestEmotion ? emotionLabel(e.bestEmotion) : '—'}</td>
                 <td>{e.worstEmotion ? emotionLabel(e.worstEmotion) : '—'}</td>

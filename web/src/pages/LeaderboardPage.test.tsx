@@ -53,7 +53,7 @@ describe('LeaderboardPage', () => {
     const cells = within(row)
       .getAllByRole('cell')
       .map((c) => c.textContent);
-    expect(cells).toEqual(['1', 'Alice', '37.5', '75%', '60', 'Happy', 'Sad']);
+    expect(cells).toEqual(['1', 'Alice', '75%', '37.5', '60', 'Happy', 'Sad']);
     expect(screen.getByRole('columnheader', { name: /avg points/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /accuracy/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /answers in window/i })).toBeInTheDocument();
@@ -65,11 +65,11 @@ describe('LeaderboardPage', () => {
     expect(within(unranked).getByText(/needs 48 more answers/i)).toBeInTheDocument();
 
     expect(screen.getByText(/last 200 answers/i)).toBeInTheDocument();
-    expect(screen.getByText(/ranked by average points/i)).toBeInTheDocument();
+    expect(screen.getByText(/ranked by accuracy/i)).toBeInTheDocument();
     expect(screen.getByText(/weakest emotions/i)).toBeInTheDocument();
   });
 
-  it('ranks by average points, not accuracy', async () => {
+  it('ranks by accuracy, not average points', async () => {
     const api = installMockApi();
     api.seedRound(ALICE.id, aliceAnswers()); // 75% accurate, 37.5 points
     api.seedRound(BOB.id, bobFastAnswers()); // 50% accurate, 50 points
@@ -82,8 +82,8 @@ describe('LeaderboardPage', () => {
         .map((c) => c.textContent),
     );
     expect(cells.map((c) => c.slice(0, 4))).toEqual([
-      ['1', 'Bob', '50.0', '50%'],
-      ['2', 'Alice', '37.5', '75%'],
+      ['1', 'Alice', '75%', '37.5'],
+      ['2', 'Bob', '50%', '50.0'],
     ]);
   });
 
