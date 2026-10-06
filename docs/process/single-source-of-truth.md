@@ -11,6 +11,7 @@ The same logical quantity or decision is computed in exactly **one** place; ever
 | Whether an answer was correct | computed once in the answer route, stored in `questions.correct` |
 | Per-emotion, per-angle and confusion stats, leaderboard numbers | the one server stats module; never stored as counters |
 | Speed-scoring constants, `pointsFor` and the client-time clamp `effectiveElapsedMs` | `shared/src/scoring.ts`; the server and the web mock both import it |
+| Leaderboard order and ranks (`rankPlayers`), the accuracy and average-points formulas (`accuracyOf`, `averagePointsOf`) | `shared/src/ranking.ts`; the server and the web mock both import it, each passing its own min-answers threshold |
 | Adaptive tuning constants | the one adaptive config module, one commented constant each |
 | Leaderboard window and min-answers | server config, returned in the `Leaderboard` response, so the SPA never hardcodes them |
 

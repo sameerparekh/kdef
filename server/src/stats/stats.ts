@@ -11,12 +11,15 @@ import {
   type Player,
   type PlayerStats,
   type Round,
+  accuracyOf,
+  averagePointsOf,
+  rankPlayers,
 } from '@kdef/shared';
 import type { Db } from '../db/connect.js';
 import type { PlayersTable, RoundsTable } from '../db/schema.js';
 import { notFound } from '../errors.js';
 import { LEADERBOARD_MIN_ANSWERS, LEADERBOARD_WINDOW, RECENT_ROUNDS } from './config.js';
-import { accuracyOf, averagePointsOf, bestAndWorst, rankPlayers } from './ranking.js';
+import { bestAndWorst } from './ranking.js';
 
 /**
  * The only place answer counts, accuracies and points totals are computed. Everything is
@@ -297,20 +300,22 @@ export async function leaderboard(db: Db): Promise<Leaderboard> {
     };
   });
 
-  const entries: LeaderboardEntry[] = rankPlayers(inputs).map(({ item, rank }) => {
-    const { best, worst } = bestAndWorst(item.emotions);
-    return {
-      player: item.player,
-      rank,
-      windowAnswered: item.windowAnswered,
-      windowCorrect: item.windowCorrect,
-      accuracy: accuracyOf(item.windowAnswered, item.windowCorrect),
-      avgPoints: averagePointsOf(item.windowAnswered, item.windowPoints),
-      totalAnswered: item.totalAnswered,
-      bestEmotion: best,
-      worstEmotion: worst,
-    };
-  });
+  const entries: LeaderboardEntry[] = rankPlayers(inputs, LEADERBOARD_MIN_ANSWERS).map(
+    ({ item, rank }) => {
+      const { best, worst } = bestAndWorst(item.emotions);
+      return {
+        player: item.player,
+        rank,
+        windowAnswered: item.windowAnswered,
+        windowCorrect: item.windowCorrect,
+        accuracy: accuracyOf(item.windowAnswered, item.windowCorrect),
+        avgPoints: averagePointsOf(item.windowAnswered, item.windowPoints),
+        totalAnswered: item.totalAnswered,
+        bestEmotion: best,
+        worstEmotion: worst,
+      };
+    },
+  );
 
   return { windowSize: LEADERBOARD_WINDOW, minAnswers: LEADERBOARD_MIN_ANSWERS, entries };
 }
